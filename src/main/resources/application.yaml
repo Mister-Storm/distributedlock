@@ -1,0 +1,24 @@
+spring:
+  application:
+    name: distributedlock
+  data:
+    redis:
+      host: localhost
+      port: 6379
+  management:
+    endpoints:
+      web:
+        exposure:
+          include: health,info,prometheus
+    tracing:
+      enabled: true
+      sampling:
+        probability: 1.0
+    otlp:
+        enabled: true
+        endpoint: http://localhost:4317/v1/traces
+distributedlock:
+  node:
+    name: xxxx
+    electionTimeout: 300
+  expirationTime: 120
