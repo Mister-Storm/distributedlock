@@ -5,6 +5,7 @@ import org.misterstorm.distributedlock.core.usecases.lock.CreateLockUseCase
 import org.misterstorm.distributedlock.core.usecases.lock.GetResourceLockStatusUseCase
 import org.misterstorm.distributedlock.core.usecases.lock.LockReleaseUseCase
 import org.misterstorm.distributedlock.core.usecases.lock.LockRenewUseCase
+import org.misterstorm.distributedlock.infra.assync.publisher.FailLockPublisher
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
@@ -15,8 +16,9 @@ class UseCaseConfig {
     @Bean
     fun createLockUseCase(
         lockRepository: LockRepository,
+        failLockPublisher: FailLockPublisher,
         @Value("\${distributedlock.expirationTime}") expirationTime: Long,
-        ): CreateLockUseCase = CreateLockUseCase(lockRepository, expirationTime)
+        ): CreateLockUseCase = CreateLockUseCase(lockRepository, failLockPublisher, expirationTime)
     @Bean
     fun getResourceLockStatusUseCase(lockRepository: LockRepository): GetResourceLockStatusUseCase =
         GetResourceLockStatusUseCase(lockRepository)

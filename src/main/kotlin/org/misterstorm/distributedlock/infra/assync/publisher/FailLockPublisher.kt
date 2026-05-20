@@ -7,7 +7,7 @@ import org.springframework.context.ApplicationEventPublisher
 import org.springframework.stereotype.Component
 
 @Component
-class QueuePublisher(
+class FailLockPublisher(
     private val eventPublisher: ApplicationEventPublisher
 ): Publisher<Lock> {
     override fun publish(value: Lock) =  eventPublisher.publishEvent(LockEvent(this, value))
