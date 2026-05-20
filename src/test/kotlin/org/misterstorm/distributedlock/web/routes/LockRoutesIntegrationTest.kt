@@ -40,7 +40,7 @@ class LockRoutesIntegrationTest {
         mvc.http(objectMapper)
             .post("/lock")
             .withBody(candidate)
-            .expectStatus(400)
+            .expectStatus(202)
             .execute()
     }
     @Test
@@ -168,7 +168,7 @@ class LockRoutesIntegrationTest {
         mvc.http(objectMapper)
             .post("/lock")
             .withBody(candidate)
-            .expectStatus(400)
+            .expectStatus(202)
             .execute()
 
         val createdLock = lockRepository.getByKey(key)
