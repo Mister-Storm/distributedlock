@@ -29,8 +29,12 @@ class LockRepositoryInMemory : LockRepository {
     }
 
     override fun addQueue(lock: Lock): Boolean = queue.add(lock)
+    override fun hasKeyInQueue(key: String): Boolean = queue.any { it.key == key }
+
+    override fun dequeue(key: String): Lock = queue.first { it.key == key }.also { queue.remove(it) }
 
     fun clear() {
         store.clear()
+        queue.clear()
     }
 }

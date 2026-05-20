@@ -1,15 +1,20 @@
 package org.misterstorm.distributedlock.core.usecases.lock
 
+import io.mockk.slot
 import io.mockk.spyk
 import io.mockk.verify
 import kotlinx.coroutines.test.runTest
+import org.junit.jupiter.api.Assertions.assertNotEquals
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.assertAll
+import org.misterstorm.distributedlock.core.async.Publisher
 import org.misterstorm.distributedlock.core.errors.BusinessError
 import org.misterstorm.distributedlock.core.models.lock.Lock
 import org.misterstorm.distributedlock.core.repository.exceptions.LockAlreadyExistsException
 import org.misterstorm.distributedlock.core.usecases.lock.support.TestLockRepository
 import org.misterstorm.distributedlock.core.usecases.lock.support.createLock
 import org.misterstorm.distributedlock.core.usecases.lock.support.createLockCandidate
+import org.misterstorm.distributedlock.web.routes.lock
 import java.time.LocalDateTime
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -23,8 +28,12 @@ class CreateLockUseCaseTest {
         val lockRepositoryStub = spyk(object : TestLockRepository() {
             override fun getByKey(key: String): Lock? = null
             override fun create(lock: Lock): Lock = lock
+            override fun hasKeyInQueue(key: String): Boolean = false
         })
-        val sut = CreateLockUseCase(lockRepositoryStub, expirationTime)
+        val failLockPublisher = spyk(object :Publisher<Lock>{
+            override fun publish(value: Lock) = Unit
+        })
+        val sut = CreateLockUseCase(lockRepositoryStub, failLockPublisher, expirationTime)
         val lockCandidate = createLockCandidate()
 
         sut.execute(lockCandidate)
@@ -36,6 +45,7 @@ class CreateLockUseCaseTest {
                     assertTrue(lock.expirationTime > LocalDateTime.now(), "Expiration time should be in the future")
                     verify(exactly = 1) { lockRepositoryStub.getByKey(lockCandidate.key) }
                     verify(exactly = 1) { lockRepositoryStub.create(any()) }
+                    verify(exactly = 0) { failLockPublisher.publish(lock) }
                 }
             )
     }
@@ -44,11 +54,19 @@ class CreateLockUseCaseTest {
     fun `should fail to create a new lock when lock still exists and is valid`() = runTest{
         val lockRepositoryStub = spyk(object : TestLockRepository() {
             override fun getByKey(key: String): Lock = createLock()
+            override fun hasKeyInQueue(key: String): Boolean = false
         })
-        val sut = CreateLockUseCase(lockRepositoryStub, expirationTime)
+        val failLockPublisher = spyk(object :Publisher<Lock>{
+            override fun publish(value: Lock) = Unit
+        })
+        val sut = CreateLockUseCase(lockRepositoryStub, failLockPublisher, expirationTime)
         val lockCandidate = createLockCandidate()
         sut.execute(lockCandidate).fold(
-            { error -> assertTrue(error is BusinessError.LockAlreadyExists, "Expected a BusinessError, but got: $error") },
+            { error -> assertAll(
+                { assertTrue(error is BusinessError.LockAlreadyExists, "Expected a BusinessError, but got: $error") },
+                { verify(exactly = 1) { failLockPublisher.publish(any()) }},
+            )
+                 },
             { _ -> fail("Expected an error to be returned, but got a lock") }
         )
     }
@@ -58,8 +76,12 @@ class CreateLockUseCaseTest {
         val lockRepositoryStub = spyk(object : TestLockRepository() {
             override fun getByKey(key: String): Lock = createLock(expirationTime = LocalDateTime.now().minusSeconds(1))
             override fun create(lock: Lock): Lock = lock
+            override fun hasKeyInQueue(key: String): Boolean = false
         })
-        val sut = CreateLockUseCase(lockRepositoryStub, expirationTime)
+        val failLockPublisher = spyk(object :Publisher<Lock>{
+            override fun publish(value: Lock) = Unit
+        })
+        val sut = CreateLockUseCase(lockRepositoryStub, failLockPublisher, expirationTime)
         val lockCandidate = createLockCandidate(clientId = "anotherClientId")
         sut.execute(lockCandidate).fold(
             { error -> fail("Expected a lock to be created, but got an error: $error") },
@@ -78,11 +100,18 @@ class CreateLockUseCaseTest {
         val lockRepositoryStub = spyk(object : TestLockRepository() {
             override fun getByKey(key: String): Lock? = null
             override fun create(lock: Lock): Lock = throw LockAlreadyExistsException()
+            override fun hasKeyInQueue(key: String): Boolean = false
         })
-        val sut = CreateLockUseCase(lockRepositoryStub, expirationTime)
+        val failLockPublisher = spyk(object :Publisher<Lock>{
+            override fun publish(value: Lock) = Unit
+        })
+        val sut = CreateLockUseCase(lockRepositoryStub, failLockPublisher, expirationTime)
         val lockCandidate = createLockCandidate()
         sut.execute(lockCandidate).fold(
-            { error -> assertTrue(error is BusinessError.LockAlreadyExists, "Expected a BusinessError, but got: $error") },
+            { error -> assertAll(
+                { assertTrue(error is BusinessError.LockAlreadyExists, "Expected a BusinessError, but got: $error") },
+                { verify(exactly = 1) { failLockPublisher.publish(any()) }},
+            )},
             { _ -> fail("Expected an error to be returned, but got a lock") }
         )
     }
@@ -92,11 +121,55 @@ class CreateLockUseCaseTest {
         val lockRepositoryStub = spyk(object : TestLockRepository() {
             override fun getByKey(key: String): Lock? = null
             override fun create(lock: Lock): Lock = throw IllegalAccessError()
+            override fun hasKeyInQueue(key: String): Boolean = false
         })
-        val sut = CreateLockUseCase(lockRepositoryStub, expirationTime)
+        val failLockPublisher = spyk(object :Publisher<Lock>{
+            override fun publish(value: Lock) = Unit
+        })
+        val sut = CreateLockUseCase(lockRepositoryStub, failLockPublisher, expirationTime)
         val lockCandidate = createLockCandidate()
         sut.execute(lockCandidate).fold(
-            { error -> assertTrue(error is BusinessError.UnexpectedException, "Expected a BusinessError, but got: $error") },
+            { error -> assertAll(
+                    { assertTrue(error is BusinessError.UnexpectedException, "Expected a BusinessError, but got: $error") },
+                    { verify(exactly = 1) { failLockPublisher.publish(any()) }},
+        )},
+            { _ -> fail("Expected an error to be returned, but got a lock") }
+        )
+    }
+
+    @Test
+    fun `should prioritize queue locks when there is at least one lock waiting in the queue`() = runTest{
+        val lockInQueue = createLock(lockOwner = "queuedClientId")
+        val lockRepositoryStub = spyk(object : TestLockRepository() {
+            override fun getByKey(key: String): Lock = createLock(expirationTime = LocalDateTime.now().minusSeconds(1))
+            override fun hasKeyInQueue(key: String): Boolean = true
+            override fun dequeue(key: String): Lock = lockInQueue
+            override fun create(lock: Lock): Lock = lock
+         })
+        val failLockPublisher = spyk(object :Publisher<Lock>{
+            override fun publish(value: Lock) = Unit
+        })
+        val sut = CreateLockUseCase(lockRepositoryStub, failLockPublisher, expirationTime)
+        val lockCandidate = createLockCandidate()
+        val captor = slot<Lock>()
+        sut.execute(lockCandidate).fold(
+            { error ->
+                assertAll(
+                    {
+                        assertTrue(
+                            error is BusinessError.LockAlreadyExists,
+                            "Expected a BusinessError, but got: $error"
+                        )
+                    },
+                    { verify(exactly = 1) { lockRepositoryStub.getByKey(lockCandidate.key) } },
+                    { verify(exactly = 1) { lockRepositoryStub.hasKeyInQueue(lockCandidate.key) } },
+                    { verify(exactly = 1) { lockRepositoryStub.dequeue(lockCandidate.key) } },
+                    { verify(exactly = 1) { lockRepositoryStub.create(capture(captor)) } },
+                    { verify(exactly = 1) { failLockPublisher.publish(any()) } },
+                    { assertEquals(lockInQueue.key, captor.captured.key) },
+                    { assertEquals(lockInQueue.lockOwner, captor.captured.lockOwner) },
+                    { assertNotEquals(lockInQueue.expirationTime, captor.captured.expirationTime) },
+                )},
             { _ -> fail("Expected an error to be returned, but got a lock") }
         )
     }

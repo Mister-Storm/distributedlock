@@ -8,4 +8,6 @@ interface LockRepository {
     fun release(lock: Lock) : Boolean
     fun renew(lock: Lock) : Lock
     fun addQueue(lock: Lock) : Boolean
+    fun hasKeyInQueue(key: String) : Boolean
+    fun dequeue(key: String) : Lock
 }

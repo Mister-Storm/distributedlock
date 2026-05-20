@@ -153,4 +153,36 @@ class LockRoutesIntegrationTest {
             .expectStatus(404)
             .execute()
     }
+
+    @Test
+    fun testPostLockWithQueuedLockForSameResource() {
+        val key = "resource-queue-test"
+        val queuedClientId = "queued-client"
+        val newClientId = "new-client"
+
+        val expiredTime = LocalDateTime.now().minusSeconds(10)
+        lockRepository.create(lock(key = key, lockOwner = "old-owner", expirationTime = expiredTime))
+
+        lockRepository.addQueue(lock(key = key, lockOwner = queuedClientId))
+        val candidate = lockCandidate(key = key, clientId = newClientId)
+        mvc.http(objectMapper)
+            .post("/lock")
+            .withBody(candidate)
+            .expectStatus(400)
+            .execute()
+
+        val createdLock = lockRepository.getByKey(key)
+        assert(createdLock != null) { "Expected a lock to be present in the repository for key=$key" }
+        assert(createdLock?.lockOwner == queuedClientId) {
+            "Expected the lock owner to be the queued client '$queuedClientId', but was '${createdLock?.lockOwner}'"
+        }
+        createdLock?.expirationTime?.let {
+            assert(it > LocalDateTime.now()) {
+                "Expected the created lock to have a future expiration time"
+            }
+        }
+        assert(lockRepository.hasKeyInQueue(key)) {
+            "Expected the new candidate '$newClientId' to be in the queue for key=$key"
+        }
+    }
 }
