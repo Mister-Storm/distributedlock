@@ -1,7 +1,8 @@
-package org.misterstorm.distributedlock.infra.raft
+package org.misterstorm.distributedlock.infra.raft.services
 
 import org.misterstorm.distributedlock.core.models.lock.Lock
 import org.misterstorm.distributedlock.core.models.lock.LockOperation
+import org.misterstorm.distributedlock.infra.raft.models.NodeRegistry
 import org.springframework.stereotype.Service
 import tools.jackson.databind.ObjectMapper
 import java.net.URI

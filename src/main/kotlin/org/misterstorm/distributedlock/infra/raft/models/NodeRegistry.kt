@@ -1,4 +1,4 @@
-package org.misterstorm.distributedlock.infra.raft
+package org.misterstorm.distributedlock.infra.raft.models
 
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.stereotype.Component

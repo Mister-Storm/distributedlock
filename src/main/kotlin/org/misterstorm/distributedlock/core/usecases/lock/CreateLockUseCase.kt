@@ -1,9 +1,7 @@
 package org.misterstorm.distributedlock.core.usecases.lock
 
 import arrow.core.Either
-import arrow.core.left
 import arrow.core.raise.either
-import arrow.core.right
 import org.misterstorm.distributedlock.core.async.Publisher
 import org.misterstorm.distributedlock.core.errors.BusinessError
 import org.misterstorm.distributedlock.core.models.lock.Lock
@@ -14,8 +12,8 @@ import org.misterstorm.distributedlock.core.repository.exceptions.LockAlreadyExi
 import org.misterstorm.distributedlock.core.support.verifyLeadership
 import org.misterstorm.distributedlock.core.support.verifyQuorum
 import org.misterstorm.distributedlock.core.usecases.AbstractUseCase
-import org.misterstorm.distributedlock.infra.raft.NodeState
-import org.misterstorm.distributedlock.infra.raft.RaftReplicationService
+import org.misterstorm.distributedlock.infra.raft.models.NodeState
+import org.misterstorm.distributedlock.infra.raft.services.RaftReplicationService
 import org.slf4j.MDC
 import java.time.LocalDateTime
 

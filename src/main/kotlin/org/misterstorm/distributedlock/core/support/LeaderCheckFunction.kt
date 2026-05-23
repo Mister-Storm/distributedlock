@@ -4,7 +4,7 @@ import arrow.core.Either
 import arrow.core.left
 import arrow.core.right
 import org.misterstorm.distributedlock.core.errors.BusinessError
-import org.misterstorm.distributedlock.infra.raft.NodeState
+import org.misterstorm.distributedlock.infra.raft.models.NodeState
 
 fun <T> verifyLeadership(nodeState: NodeState, action: () -> Either<BusinessError, T>,
                          onNotLeader: () -> BusinessError) : Either<BusinessError, T> =

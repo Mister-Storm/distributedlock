@@ -14,7 +14,7 @@ import org.misterstorm.distributedlock.core.usecases.lock.support.TestLockReposi
 import org.misterstorm.distributedlock.core.usecases.lock.support.createLock
 import org.misterstorm.distributedlock.core.usecases.lock.support.createLockCandidate
 import org.misterstorm.distributedlock.core.usecases.lock.support.createNodeState
-import org.misterstorm.distributedlock.infra.raft.RaftReplicationService
+import org.misterstorm.distributedlock.infra.raft.services.RaftReplicationService
 import kotlin.test.assertTrue
 import kotlin.test.fail
 

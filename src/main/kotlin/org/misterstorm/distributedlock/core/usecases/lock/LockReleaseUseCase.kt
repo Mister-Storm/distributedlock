@@ -10,8 +10,8 @@ import org.misterstorm.distributedlock.core.repository.LockRepository
 import org.misterstorm.distributedlock.core.support.verifyLeadership
 import org.misterstorm.distributedlock.core.support.verifyQuorum
 import org.misterstorm.distributedlock.core.usecases.AbstractUseCase
-import org.misterstorm.distributedlock.infra.raft.NodeState
-import org.misterstorm.distributedlock.infra.raft.RaftReplicationService
+import org.misterstorm.distributedlock.infra.raft.models.NodeState
+import org.misterstorm.distributedlock.infra.raft.services.RaftReplicationService
 
 class LockReleaseUseCase(
     private val lockRepository: LockRepository,

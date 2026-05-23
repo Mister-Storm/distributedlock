@@ -2,7 +2,14 @@ package org.misterstorm.distributedlock.web.routes
 
 import org.misterstorm.distributedlock.core.models.lock.ReplicaEntry
 import org.misterstorm.distributedlock.core.repository.LockRepository
-import org.misterstorm.distributedlock.infra.raft.*
+import org.misterstorm.distributedlock.infra.raft.models.NodeRegistry
+import org.misterstorm.distributedlock.infra.raft.models.NodeState
+import org.misterstorm.distributedlock.infra.raft.requests.HeartbeatRequest
+import org.misterstorm.distributedlock.infra.raft.requests.VoteRequest
+import org.misterstorm.distributedlock.infra.raft.requests.VoteResponse
+import org.misterstorm.distributedlock.infra.raft.services.CommitRequest
+import org.misterstorm.distributedlock.infra.raft.services.GossipMessage
+import org.misterstorm.distributedlock.infra.raft.services.ReplicateRequest
 import org.misterstorm.distributedlock.web.routes.spec.RaftRoutesSpec
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.RestController

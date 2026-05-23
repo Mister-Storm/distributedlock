@@ -2,7 +2,7 @@ package org.misterstorm.distributedlock.core.usecases.lock.support
 
 import org.misterstorm.distributedlock.core.models.lock.Lock
 import org.misterstorm.distributedlock.core.models.lock.LockCandidate
-import org.misterstorm.distributedlock.infra.raft.NodeState
+import org.misterstorm.distributedlock.infra.raft.models.NodeState
 import java.time.LocalDateTime
 
 private const val TEST_KEY = "test_key"
