@@ -6,8 +6,8 @@ import org.misterstorm.distributedlock.core.usecases.lock.GetResourceLockStatusU
 import org.misterstorm.distributedlock.core.usecases.lock.LockReleaseUseCase
 import org.misterstorm.distributedlock.core.usecases.lock.LockRenewUseCase
 import org.misterstorm.distributedlock.infra.assync.publisher.FailLockPublisher
-import org.misterstorm.distributedlock.infra.raft.NodeState
-import org.misterstorm.distributedlock.infra.raft.RaftReplicationService
+import org.misterstorm.distributedlock.infra.raft.models.NodeState
+import org.misterstorm.distributedlock.infra.raft.services.RaftReplicationService
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration

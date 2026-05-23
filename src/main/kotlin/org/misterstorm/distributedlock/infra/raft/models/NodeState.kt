@@ -1,4 +1,4 @@
-package org.misterstorm.distributedlock.infra.raft
+package org.misterstorm.distributedlock.infra.raft.models
 
 import org.misterstorm.distributedlock.core.models.Role
 import org.springframework.beans.factory.annotation.Value

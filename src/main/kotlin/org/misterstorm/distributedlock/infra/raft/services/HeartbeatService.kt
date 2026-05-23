@@ -1,6 +1,8 @@
-package org.misterstorm.distributedlock.infra.raft
+package org.misterstorm.distributedlock.infra.raft.services
 
-import org.misterstorm.distributedlock.core.models.Role
+import org.misterstorm.distributedlock.infra.raft.requests.HeartbeatRequest
+import org.misterstorm.distributedlock.infra.raft.models.NodeRegistry
+import org.misterstorm.distributedlock.infra.raft.models.NodeState
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 import org.springframework.scheduling.annotation.Scheduled

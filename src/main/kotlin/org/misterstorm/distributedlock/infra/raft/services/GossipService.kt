@@ -1,10 +1,12 @@
-package org.misterstorm.distributedlock.infra.raft
+package org.misterstorm.distributedlock.infra.raft.services
 
+import org.misterstorm.distributedlock.infra.raft.models.NodeRegistry
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 import org.springframework.scheduling.annotation.Scheduled
 import org.springframework.stereotype.Service
 import tools.jackson.databind.ObjectMapper
+import java.net.URI
 import java.net.http.HttpClient
 import java.net.http.HttpRequest
 import java.net.http.HttpResponse
@@ -25,7 +27,7 @@ class GossipService(
         nodeRegistry.getPeerUrls().forEach { url ->
             runCatching {
                 val request = HttpRequest.newBuilder()
-                    .uri(java.net.URI.create("$url/raft/gossip"))
+                    .uri(URI.create("$url/raft/gossip"))
                     .header("Content-Type", "application/json")
                     .POST(HttpRequest.BodyPublishers.ofString(requestBody))
                     .build()

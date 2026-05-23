@@ -18,9 +18,8 @@ import org.misterstorm.distributedlock.core.usecases.lock.support.TestLockReposi
 import org.misterstorm.distributedlock.core.usecases.lock.support.createLock
 import org.misterstorm.distributedlock.core.usecases.lock.support.createLockCandidate
 import org.misterstorm.distributedlock.core.usecases.lock.support.createNodeState
-import org.misterstorm.distributedlock.infra.raft.NodeState
-import org.misterstorm.distributedlock.infra.raft.RaftReplicationService
-import org.misterstorm.distributedlock.web.routes.lock
+import org.misterstorm.distributedlock.infra.raft.models.NodeState
+import org.misterstorm.distributedlock.infra.raft.services.RaftReplicationService
 import java.time.LocalDateTime
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue

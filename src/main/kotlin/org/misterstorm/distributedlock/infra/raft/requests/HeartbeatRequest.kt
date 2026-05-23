@@ -1,4 +1,4 @@
-package org.misterstorm.distributedlock.infra.raft
+package org.misterstorm.distributedlock.infra.raft.requests
 
 data class HeartbeatRequest(
     val leaderName: String,

@@ -1,11 +1,11 @@
 package org.misterstorm.distributedlock.web.routes.spec
 
-import org.misterstorm.distributedlock.infra.raft.CommitRequest
-import org.misterstorm.distributedlock.infra.raft.GossipMessage
-import org.misterstorm.distributedlock.infra.raft.HeartbeatRequest
-import org.misterstorm.distributedlock.infra.raft.ReplicateRequest
-import org.misterstorm.distributedlock.infra.raft.VoteRequest
-import org.misterstorm.distributedlock.infra.raft.VoteResponse
+import org.misterstorm.distributedlock.infra.raft.services.CommitRequest
+import org.misterstorm.distributedlock.infra.raft.services.GossipMessage
+import org.misterstorm.distributedlock.infra.raft.requests.HeartbeatRequest
+import org.misterstorm.distributedlock.infra.raft.services.ReplicateRequest
+import org.misterstorm.distributedlock.infra.raft.requests.VoteRequest
+import org.misterstorm.distributedlock.infra.raft.requests.VoteResponse
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PostMapping
