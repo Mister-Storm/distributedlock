@@ -28,6 +28,7 @@ dependencies {
     implementation("net.logstash.logback:logstash-logback-encoder:8.0")
     developmentOnly("org.springframework.boot:spring-boot-devtools")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.2")
+    testImplementation("org.mock-server:mockserver-netty:5.15.0")
     testImplementation("org.springframework.boot:spring-boot-webmvc-test")
     testImplementation("org.springframework.boot:spring-boot-starter-test") {
         exclude(group = "org.junit.vintage", module = "junit-vintage-engine")

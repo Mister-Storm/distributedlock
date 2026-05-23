@@ -8,6 +8,8 @@ import org.springframework.test.web.servlet.request.MockMvcRequestBuilders
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers
 import org.misterstorm.distributedlock.core.models.lock.Lock
 import org.misterstorm.distributedlock.core.models.lock.LockCandidate
+import org.misterstorm.distributedlock.core.models.lock.LockOperation
+import org.misterstorm.distributedlock.core.models.lock.ReplicaEntry
 import java.time.LocalDateTime
 
 class HttpRequest(val mvc: MockMvc, val objectMapper: ObjectMapper) {
@@ -90,6 +92,12 @@ fun lock(
     lockOwner: String = "test-client-id",
     expirationTime: LocalDateTime = LocalDateTime.now().plusSeconds(120)
 ) = Lock(key = key, lockOwner = lockOwner, expirationTime = expirationTime)
+
+fun replicaEntry(
+    idempotencyKey: String = "test-idempotency-key",
+    operation: LockOperation = LockOperation.CREATE,
+    lock: Lock = lock()
+) = ReplicaEntry(idempotencyKey = idempotencyKey, operation = operation, lock = lock)
 
 fun MockMvc.http(objectMapper: ObjectMapper) = HttpRequest(this, objectMapper)
 
