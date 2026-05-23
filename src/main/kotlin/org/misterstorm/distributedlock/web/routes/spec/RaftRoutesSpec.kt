@@ -29,6 +29,8 @@ interface RaftRoutesSpec {
     fun commit(@RequestBody request: CommitRequest): ResponseEntity<*>
     @GetMapping("/status")
     fun status(): ResponseEntity<*>
+    @GetMapping("/snapshot")
+    fun snapshot(): ResponseEntity<*>
     @PostMapping("/join")
     fun join(@RequestBody request: JoinRequest): ResponseEntity<GossipMessage>
     @PostMapping("/exclude-vote")

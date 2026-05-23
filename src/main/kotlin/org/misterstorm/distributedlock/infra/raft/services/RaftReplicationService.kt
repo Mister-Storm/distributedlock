@@ -79,3 +79,9 @@ data class JoinRequest(val name: String, val url: String)
 data class ExcludeVoteRequest(val suspectUrl: String)
 
 data class ExcludeVoteResponse(val exclude: Boolean)
+
+data class SnapshotResponse(
+    val locks: Collection<Lock>,
+    val queue: Collection<Lock>,
+)
+

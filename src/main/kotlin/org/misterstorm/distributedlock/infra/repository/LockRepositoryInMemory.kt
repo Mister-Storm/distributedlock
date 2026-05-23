@@ -59,6 +59,17 @@ class LockRepositoryInMemory : LockRepository {
 
     override fun getPending(idempotencyKey: String): ReplicaEntry? = pendingEntries[idempotencyKey]
 
+    override fun loadSnapshot(locks: Collection<Lock>, queue: Collection<Lock>) {
+        locks.filter { !it.isExpired() }.forEach { lock ->
+            store.putIfAbsent(lock.key, lock)
+        }
+        queue.filter { !it.isExpired() }.forEach { lock ->
+            if (!hasKeyInQueue(lock.key)) {
+                this.queue.add(lock)
+            }
+        }
+    }
+
     @Scheduled(fixedRate = 3000)
     fun deleteExpiredLocks() {
         store.forEach { (_, value) ->
