@@ -62,12 +62,13 @@ class LockRepositoryInMemory : LockRepository {
     @Scheduled(fixedRate = 3000)
     fun deleteExpiredLocks() {
         store.forEach { (_, value) ->
-            if(value.isExpired()) {
-                store.remove(value.key)
+            if (value.isExpired() && store.remove(value.key, value)) {
                 queue.firstOrNull { it.key == value.key }?.let { new ->
                     store.compute(new.key) { _, _ -> new }
-                    queue.remove(new) }
-            } }
+                    queue.remove(new)
+                }
+            }
+        }
     }
 
     fun clear() {
