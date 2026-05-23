@@ -73,3 +73,9 @@ data class ReplicateRequest(
 )
 
 data class CommitRequest(val idempotencyKey: String)
+
+data class JoinRequest(val name: String, val url: String)
+
+data class ExcludeVoteRequest(val suspectUrl: String)
+
+data class ExcludeVoteResponse(val exclude: Boolean)

@@ -8,17 +8,26 @@ import org.misterstorm.distributedlock.infra.raft.requests.HeartbeatRequest
 import org.misterstorm.distributedlock.infra.raft.requests.VoteRequest
 import org.misterstorm.distributedlock.infra.raft.requests.VoteResponse
 import org.misterstorm.distributedlock.infra.raft.services.CommitRequest
+import org.misterstorm.distributedlock.infra.raft.services.ExcludeVoteRequest
+import org.misterstorm.distributedlock.infra.raft.services.ExcludeVoteResponse
 import org.misterstorm.distributedlock.infra.raft.services.GossipMessage
+import org.misterstorm.distributedlock.infra.raft.services.JoinRequest
 import org.misterstorm.distributedlock.infra.raft.services.ReplicateRequest
 import org.misterstorm.distributedlock.web.routes.spec.RaftRoutesSpec
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.RestController
+import java.net.URI
+import java.net.http.HttpClient
+import java.net.http.HttpRequest
+import java.net.http.HttpResponse
+import java.time.Duration
 
 @RestController
 class RaftRoutes(
     private val nodeState: NodeState,
     private val nodeRegistry: NodeRegistry,
     private val lockRepository: LockRepository,
+    private val httpClient: HttpClient,
 ): RaftRoutesSpec {
     override fun heartbeat(request: HeartbeatRequest): ResponseEntity<*> {
         if (request.term < nodeState.currentTerm.get() || nodeState.isLeader()) {
@@ -82,7 +91,28 @@ class RaftRoutes(
             "leaderUrl" to nodeState.leaderUrl.get(),
             "peers" to nodeRegistry.getPeerUrls(),
             "knownNodes" to nodeRegistry.getAllNodes(),
+            "locks" to lockRepository.getAllLocks(),
+            "locks_in_queue" to lockRepository.getAllInQueue(),
         )
     )
 
+    override fun join(request: JoinRequest): ResponseEntity<GossipMessage> {
+        nodeRegistry.merge(mapOf(request.name to request.url))
+        return ResponseEntity.ok(GossipMessage(nodeRegistry.getAllNodes()))
+    }
+
+    override fun excludeVote(request: ExcludeVoteRequest): ResponseEntity<ExcludeVoteResponse> {
+        val canReach = runCatching {
+            val response = httpClient.send(
+                HttpRequest.newBuilder()
+                    .uri(URI.create("${request.suspectUrl}/raft/status"))
+                    .GET()
+                    .timeout(Duration.ofSeconds(2))
+                    .build(),
+                HttpResponse.BodyHandlers.discarding()
+            )
+            response.statusCode() == 200
+        }.getOrDefault(false)
+        return ResponseEntity.ok(ExcludeVoteResponse(exclude = !canReach))
+    }
 }

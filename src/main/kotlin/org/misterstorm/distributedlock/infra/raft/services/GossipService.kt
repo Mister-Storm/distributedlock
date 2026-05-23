@@ -23,7 +23,9 @@ class GossipService(
     fun executeGossip() {
         log.info("Starting gossip")
         val localNodes = nodeRegistry.getAllNodes()
-        val requestBody = objectMapper.writeValueAsString(GossipMessage(localNodes))
+        val deadNodes = nodeRegistry.getPendingRemovals()
+        val requestBody = objectMapper.writeValueAsString(GossipMessage(localNodes, deadNodes))
+        nodeRegistry.clearPendingRemovals()
         nodeRegistry.getPeerUrls().forEach { url ->
             runCatching {
                 val request = HttpRequest.newBuilder()
@@ -34,8 +36,9 @@ class GossipService(
                 httpClient.send(request, HttpResponse.BodyHandlers.ofString()).let {
                     if (it.statusCode() == 200) {
                         log.info("Gossip received")
-                        nodeRegistry.merge( objectMapper.readValue(it.body(),
-                            GossipMessage::class.java).nodes)
+                        val response = objectMapper.readValue(it.body(), GossipMessage::class.java)
+                        nodeRegistry.merge(response.nodes)
+                        nodeRegistry.applyRemovals(response.deadNodes)
                     } else {
                         nodeRegistry.remove(url)
                     }
