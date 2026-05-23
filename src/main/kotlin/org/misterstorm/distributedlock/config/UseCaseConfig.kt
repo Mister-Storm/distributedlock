@@ -6,6 +6,8 @@ import org.misterstorm.distributedlock.core.usecases.lock.GetResourceLockStatusU
 import org.misterstorm.distributedlock.core.usecases.lock.LockReleaseUseCase
 import org.misterstorm.distributedlock.core.usecases.lock.LockRenewUseCase
 import org.misterstorm.distributedlock.infra.assync.publisher.FailLockPublisher
+import org.misterstorm.distributedlock.infra.raft.NodeState
+import org.misterstorm.distributedlock.infra.raft.RaftReplicationService
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
@@ -18,16 +20,22 @@ class UseCaseConfig {
         lockRepository: LockRepository,
         failLockPublisher: FailLockPublisher,
         @Value("\${distributedlock.expirationTime}") expirationTime: Long,
-        ): CreateLockUseCase = CreateLockUseCase(lockRepository, failLockPublisher, expirationTime)
+        nodeState: NodeState,
+        raftReplicationService: RaftReplicationService,
+        ): CreateLockUseCase = CreateLockUseCase(lockRepository, failLockPublisher, expirationTime, nodeState, raftReplicationService)
     @Bean
     fun getResourceLockStatusUseCase(lockRepository: LockRepository): GetResourceLockStatusUseCase =
         GetResourceLockStatusUseCase(lockRepository)
     @Bean
     fun lockReleaseUseCase(
         lockRepository: LockRepository,
-    ): LockReleaseUseCase = LockReleaseUseCase(lockRepository)
+        nodeState: NodeState,
+        raftReplicationService: RaftReplicationService,
+    ): LockReleaseUseCase = LockReleaseUseCase(lockRepository, nodeState, raftReplicationService)
     @Bean
     fun lockRenewUseCase(
         lockRepository: LockRepository,
-    ): LockRenewUseCase = LockRenewUseCase(lockRepository)
+        nodeState: NodeState,
+        raftReplicationService: RaftReplicationService,
+    ): LockRenewUseCase = LockRenewUseCase(lockRepository, nodeState, raftReplicationService)
 }

@@ -1,5 +1,6 @@
 package org.misterstorm.distributedlock.web.routes
 
+import org.misterstorm.distributedlock.core.errors.BusinessError
 import org.misterstorm.distributedlock.core.models.lock.LockCandidate
 import org.misterstorm.distributedlock.core.usecases.lock.CreateLockUseCase
 import org.misterstorm.distributedlock.core.usecases.lock.GetResourceLockStatusUseCase
@@ -13,7 +14,6 @@ import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RestController
 
 @RestController
-@RequestMapping("/lock")
 class LockRoutes(
     private val createLockUseCase: CreateLockUseCase,
     private val lockReleaseUseCase: LockReleaseUseCase,
@@ -23,8 +23,7 @@ class LockRoutes(
     override suspend fun lock(lock: LockCandidate): ResponseEntity<*> =
         createLockUseCase.execute(lock).fold(
             { error ->
-                val result = ErrorResponse.from(error)
-                ResponseEntity.status(result.httpStatus).body(result)
+                handleError(error, "/lock")
                      },
              { lock -> ResponseEntity
                 .status(HttpStatus.CREATED).body(lock) }
@@ -34,10 +33,9 @@ class LockRoutes(
     override suspend fun unlock(lock: LockCandidate): ResponseEntity<*> =
         lockReleaseUseCase.execute(lock).fold(
             { error ->
-                val result = ErrorResponse.from(error)
-                ResponseEntity.status(result.httpStatus).body(result)
+                handleError(error, "/lock")
             },
-            { ResponseEntity.noContent().build() }
+            { ResponseEntity.noContent().build<Unit>() }
         )
 
     override suspend fun renew(
@@ -45,8 +43,7 @@ class LockRoutes(
     ): ResponseEntity<*> =
         lockRenewUseCase.execute(lock).fold(
             { error ->
-                val result = ErrorResponse.from(error)
-                ResponseEntity.status(result.httpStatus).body(result)
+                handleError(error, "/lock")
             },
             { lock -> ResponseEntity.ok(lock) }
         )
@@ -59,4 +56,15 @@ class LockRoutes(
             },
             { lock -> ResponseEntity.ok(lock) }
         )
+
+    private fun handleError(error: BusinessError, path: String): ResponseEntity<*> {
+        if (error is BusinessError.NotLeader && error.leaderUrl != null) {
+            return ResponseEntity
+                .status(HttpStatus.TEMPORARY_REDIRECT)
+                .header("Location", "${error.leaderUrl}$path")
+                .build<Unit>()
+        }
+        val result = ErrorResponse.from(error)
+        return ResponseEntity.status(result.httpStatus).body(result)
+    }
 }

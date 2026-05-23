@@ -5,4 +5,6 @@ sealed interface BusinessError {
     class ApplicantReleaseIsNotOwner: BusinessError
     class LockNotFound: BusinessError
     class UnexpectedException: BusinessError
+    data class NotLeader(val leaderUrl: String?) : BusinessError
+    class QuorumNotReached : BusinessError
 }

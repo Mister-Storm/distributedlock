@@ -8,4 +8,7 @@ data class Lock(
     val expirationTime: LocalDateTime,
 ) {
     fun isExpired() = expirationTime.isBefore(LocalDateTime.now())
+    fun renew(): Lock = this.copy(
+        expirationTime = expirationTime.plusSeconds(120),
+    )
 }

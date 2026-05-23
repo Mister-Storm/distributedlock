@@ -2,6 +2,7 @@ package org.misterstorm.distributedlock.core.usecases.lock.support
 
 import org.misterstorm.distributedlock.core.models.lock.Lock
 import org.misterstorm.distributedlock.core.models.lock.LockCandidate
+import org.misterstorm.distributedlock.infra.raft.NodeState
 import java.time.LocalDateTime
 
 private const val TEST_KEY = "test_key"
@@ -26,3 +27,17 @@ fun createLock(
     lockOwner = lockOwner,
     expirationTime = expirationTime,
 )
+
+fun createNodeState(
+    nomeName: String = "node1",
+    nodeUrl: String = "http://localhost:8080",
+    electionTime: Long = 1000L,
+): NodeState {
+    val nodeState = NodeState(
+        nodeName = nomeName,
+        nodeUrl = nodeUrl,
+        electionTimeout = electionTime,
+    )
+    nodeState.becomeLeader()
+    return nodeState
+}

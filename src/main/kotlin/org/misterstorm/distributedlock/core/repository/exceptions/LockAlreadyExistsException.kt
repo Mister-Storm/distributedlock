@@ -1,3 +1,5 @@
 package org.misterstorm.distributedlock.core.repository.exceptions
 
-class LockAlreadyExistsException: RuntimeException()
+import org.misterstorm.distributedlock.core.models.lock.Lock
+
+class LockAlreadyExistsException(val existentLock: Lock): RuntimeException()

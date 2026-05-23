@@ -4,7 +4,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties
 import org.springframework.stereotype.Component
 
 @Component
-//@ConfigurationProperties(prefix = "distributedlock.raft")
+@ConfigurationProperties(prefix = "distributedlock.raft")
 class RaftProperties {
-    val peers: List<String> = emptyList()
+    val seeds: List<String> = mutableListOf()
 }
