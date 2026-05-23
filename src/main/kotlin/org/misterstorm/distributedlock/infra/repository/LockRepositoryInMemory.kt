@@ -5,7 +5,6 @@ import org.misterstorm.distributedlock.core.models.lock.LockOperation
 import org.misterstorm.distributedlock.core.models.lock.ReplicaEntry
 import org.misterstorm.distributedlock.core.repository.LockRepository
 import org.misterstorm.distributedlock.core.repository.exceptions.LockAlreadyExistsException
-import org.springframework.scheduling.annotation.Scheduled
 import org.springframework.stereotype.Repository
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CopyOnWriteArrayList
@@ -70,17 +69,6 @@ class LockRepositoryInMemory : LockRepository {
         }
     }
 
-    @Scheduled(fixedRate = 3000)
-    fun deleteExpiredLocks() {
-        store.forEach { (_, value) ->
-            if (value.isExpired() && store.remove(value.key, value)) {
-                queue.firstOrNull { it.key == value.key }?.let { new ->
-                    store.compute(new.key) { _, _ -> new }
-                    queue.remove(new)
-                }
-            }
-        }
-    }
 
     fun clear() {
         store.clear()
