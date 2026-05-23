@@ -1,6 +1,7 @@
 package org.misterstorm.distributedlock.core.repository
 
 import org.misterstorm.distributedlock.core.models.lock.Lock
+import org.misterstorm.distributedlock.core.models.lock.ReplicaEntry
 
 interface LockRepository {
     fun create(lock: Lock) : Lock
@@ -10,4 +11,9 @@ interface LockRepository {
     fun addQueue(lock: Lock) : Boolean
     fun hasKeyInQueue(key: String) : Boolean
     fun dequeue(key: String) : Lock
+
+    fun savePending(entry: ReplicaEntry)
+    fun commit(idempotencyKey: String)
+    fun hasPending(idempotencyKey: String): Boolean
+    fun getPending(idempotencyKey: String): ReplicaEntry?
 }

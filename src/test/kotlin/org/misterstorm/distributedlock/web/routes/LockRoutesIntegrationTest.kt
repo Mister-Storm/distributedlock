@@ -7,6 +7,8 @@ import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.test.web.servlet.MockMvc
 import tools.jackson.databind.ObjectMapper
 import org.misterstorm.distributedlock.core.repository.LockRepository
+import org.misterstorm.distributedlock.infra.raft.NodeRegistry
+import org.misterstorm.distributedlock.infra.raft.NodeState
 import org.misterstorm.distributedlock.infra.repository.LockRepositoryInMemory
 import java.time.LocalDateTime
 @SpringBootTest
@@ -18,9 +20,15 @@ class LockRoutesIntegrationTest {
     private lateinit var objectMapper: ObjectMapper
     @Autowired
     private lateinit var lockRepository: LockRepository
+    @Autowired
+    private lateinit var nodeState: NodeState
+    @Autowired
+    private lateinit var nodeRegistry: NodeRegistry
     @BeforeEach
     fun setup() {
         (lockRepository as LockRepositoryInMemory).clear()
+        nodeState.becomeLeader()
+        nodeRegistry.getPeerUrls().forEach { nodeRegistry.remove(it) }
     }
     @Test
     fun testPostLockCreateNewLock() {

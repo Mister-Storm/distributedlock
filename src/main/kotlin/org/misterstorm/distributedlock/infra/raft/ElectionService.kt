@@ -1,23 +1,24 @@
 package org.misterstorm.distributedlock.infra.raft
 
 import org.misterstorm.distributedlock.core.models.Role
+import org.slf4j.Logger
+import org.slf4j.LoggerFactory
 import org.springframework.scheduling.annotation.Scheduled
 import org.springframework.stereotype.Service
 import tools.jackson.databind.ObjectMapper
 import java.net.http.HttpClient
 import java.net.http.HttpRequest
 import java.net.http.HttpResponse
-import kotlin.math.log
 
 @Service
 class ElectionService(private val nodeState: NodeState,
-                      private val raftProperties: RaftProperties,
+                      private val nodeRegistry: NodeRegistry,
                       private val httpClient: HttpClient,
                       private val objectMapper: ObjectMapper
 ) {
     @Scheduled(fixedRate = 60000)
     fun checkElectionTimeout() {
-        if(nodeState.role.get() == Role.LEADER || !nodeState.isHeartbeatExpired()) {
+        if(nodeState.isLeader() || !nodeState.isHeartbeatExpired()) {
             return
         }
         startElection()
@@ -27,11 +28,12 @@ class ElectionService(private val nodeState: NodeState,
             nodeState.becomeCandidate()
             val voteRequest = VoteRequest(
                 candidateName = nodeState.nodeName,
+                candidateUrl = nodeState.nodeUrl,
                 term = nodeState.currentTerm.get(),
             )
             val body = objectMapper.writeValueAsString(voteRequest)
             var votes = 1
-            raftProperties.peers.forEach { peer ->
+            nodeRegistry.getPeerUrls().forEach { peer ->
                 runCatching {
                     val request = HttpRequest.newBuilder()
                         .uri(java.net.URI.create("$peer/raft/vote"))
@@ -47,7 +49,7 @@ class ElectionService(private val nodeState: NodeState,
 
                 }
             }
-            val quorum = (raftProperties.peers.size + 1) / 2 + 1
+            val quorum = (nodeRegistry.getPeerUrls().size + 1) / 2 + 1
             if (votes >= quorum) {
                 nodeState.becomeLeader()
             } else {
