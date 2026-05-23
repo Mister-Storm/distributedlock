@@ -1,4 +1,7 @@
 package org.misterstorm.distributedlock.web.routes
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertNotNull
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
@@ -11,27 +14,25 @@ import org.misterstorm.distributedlock.infra.raft.models.NodeRegistry
 import org.misterstorm.distributedlock.infra.raft.models.NodeState
 import org.misterstorm.distributedlock.infra.repository.LockRepositoryInMemory
 import java.time.LocalDateTime
+
 @SpringBootTest
 @AutoConfigureMockMvc
 class LockRoutesIntegrationTest {
-    @Autowired
-    private lateinit var mvc: MockMvc
-    @Autowired
-    private lateinit var objectMapper: ObjectMapper
-    @Autowired
-    private lateinit var lockRepository: LockRepository
-    @Autowired
-    private lateinit var nodeState: NodeState
-    @Autowired
-    private lateinit var nodeRegistry: NodeRegistry
+    @Autowired private lateinit var mvc: MockMvc
+    @Autowired private lateinit var objectMapper: ObjectMapper
+    @Autowired private lateinit var lockRepository: LockRepository
+    @Autowired private lateinit var nodeState: NodeState
+    @Autowired private lateinit var nodeRegistry: NodeRegistry
+
     @BeforeEach
     fun setup() {
         (lockRepository as LockRepositoryInMemory).clear()
         nodeState.becomeLeader()
         nodeRegistry.getPeerUrls().forEach { nodeRegistry.remove(it) }
     }
+
     @Test
-    fun testPostLockCreateNewLock() {
+    fun `should create new lock when resource is available`() {
         val candidate = lockCandidate(key = "resource-123", clientId = "client-001")
         mvc.http(objectMapper)
             .post("/lock")
@@ -41,8 +42,9 @@ class LockRoutesIntegrationTest {
             .expectJsonPath("$.lockOwner", "client-001")
             .execute()
     }
+
     @Test
-    fun testPostLockAlreadyExists() {
+    fun `should return 202 when lock already exists for resource`() {
         val candidate = lockCandidate(key = "resource-456", clientId = "client-002")
         lockRepository.create(lock(key = "resource-456", lockOwner = "existing-owner"))
         mvc.http(objectMapper)
@@ -51,8 +53,9 @@ class LockRoutesIntegrationTest {
             .expectStatus(202)
             .execute()
     }
+
     @Test
-    fun testPostLockExpiredLockReplacement() {
+    fun `should replace lock when existing lock is expired`() {
         val candidate = lockCandidate(key = "resource-789", clientId = "client-003")
         val expiredTime = LocalDateTime.now().minusSeconds(10)
         lockRepository.create(lock(key = "resource-789", lockOwner = "old-owner", expirationTime = expiredTime))
@@ -63,8 +66,9 @@ class LockRoutesIntegrationTest {
             .expectJsonPath("$.key", "resource-789")
             .execute()
     }
+
     @Test
-    fun testPostLockCreationSuccess() {
+    fun `should return 201 when lock is successfully created for unique resource`() {
         val candidate = lockCandidate(key = "lock-1", clientId = "client-new")
         mvc.http(objectMapper)
             .post("/lock")
@@ -72,8 +76,9 @@ class LockRoutesIntegrationTest {
             .expectStatus(201)
             .execute()
     }
+
     @Test
-    fun testDeleteLockSuccess() {
+    fun `should return 204 when owner releases lock`() {
         val candidate = lockCandidate(key = "resource-delete-1", clientId = "client-delete-1")
         lockRepository.create(lock(key = "resource-delete-1", lockOwner = "client-delete-1"))
         mvc.http(objectMapper)
@@ -82,8 +87,9 @@ class LockRoutesIntegrationTest {
             .expectStatus(204)
             .execute()
     }
+
     @Test
-    fun testDeleteLockNotFound() {
+    fun `should return 404 when lock does not exist on release`() {
         val candidate = lockCandidate(key = "resource-not-found", clientId = "client-001")
         mvc.http(objectMapper)
             .delete("/lock")
@@ -91,8 +97,9 @@ class LockRoutesIntegrationTest {
             .expectStatus(404)
             .execute()
     }
+
     @Test
-    fun testDeleteLockUnauthorized() {
+    fun `should return 409 when requester is not lock owner on release`() {
         val candidate = lockCandidate(key = "resource-not-owner", clientId = "client-unauthorized")
         lockRepository.create(lock(key = "resource-not-owner", lockOwner = "lock-owner"))
         mvc.http(objectMapper)
@@ -101,8 +108,9 @@ class LockRoutesIntegrationTest {
             .expectStatus(409)
             .execute()
     }
+
     @Test
-    fun testPutLockSuccess() {
+    fun `should return renewed lock when owner requests renewal`() {
         val candidate = lockCandidate(key = "resource-renew-1", clientId = "client-renew-1")
         lockRepository.create(lock(key = "resource-renew-1", lockOwner = "client-renew-1"))
         mvc.http(objectMapper)
@@ -112,8 +120,9 @@ class LockRoutesIntegrationTest {
             .expectJsonPath("$.key", "resource-renew-1")
             .execute()
     }
+
     @Test
-    fun testPutLockNotFound() {
+    fun `should return 404 when lock does not exist on renewal`() {
         val candidate = lockCandidate(key = "resource-renew-not-found", clientId = "client-001")
         mvc.http(objectMapper)
             .put("/lock")
@@ -121,8 +130,9 @@ class LockRoutesIntegrationTest {
             .expectStatus(404)
             .execute()
     }
+
     @Test
-    fun testPutLockUnauthorized() {
+    fun `should return 409 when requester is not lock owner on renewal`() {
         val candidate = lockCandidate(key = "resource-renew-not-owner", clientId = "client-unauthorized")
         lockRepository.create(lock(key = "resource-renew-not-owner", lockOwner = "lock-owner"))
         mvc.http(objectMapper)
@@ -131,8 +141,9 @@ class LockRoutesIntegrationTest {
             .expectStatus(409)
             .execute()
     }
+
     @Test
-    fun testGetLockLocked() {
+    fun `should return LOCKED status when resource has active lock`() {
         val key = "resource-get-locked"
         lockRepository.create(lock(key = key, lockOwner = "client-lock-owner"))
         mvc.http(objectMapper)
@@ -142,8 +153,9 @@ class LockRoutesIntegrationTest {
             .expectJsonPath("$.status", "LOCKED")
             .execute()
     }
+
     @Test
-    fun testGetLockAvailable() {
+    fun `should return AVAILABLE status when resource lock is expired`() {
         val key = "resource-get-not-locked"
         lockRepository.create(lock(key = key, lockOwner = "old-owner", expirationTime = LocalDateTime.now().minusSeconds(10)))
         mvc.http(objectMapper)
@@ -153,8 +165,9 @@ class LockRoutesIntegrationTest {
             .expectJsonPath("$.status", "AVAILABLE")
             .execute()
     }
+
     @Test
-    fun testGetLockNotFound() {
+    fun `should return 404 when resource has no lock record`() {
         val key = "resource-get-not-found"
         mvc.http(objectMapper)
             .get("/lock/$key")
@@ -163,7 +176,7 @@ class LockRoutesIntegrationTest {
     }
 
     @Test
-    fun testPostLockWithQueuedLockForSameResource() {
+    fun `should grant lock to queued candidate and enqueue new request when resource has waiting queue`() {
         val key = "resource-queue-test"
         val queuedClientId = "queued-client"
         val newClientId = "new-client"
@@ -180,17 +193,9 @@ class LockRoutesIntegrationTest {
             .execute()
 
         val createdLock = lockRepository.getByKey(key)
-        assert(createdLock != null) { "Expected a lock to be present in the repository for key=$key" }
-        assert(createdLock?.lockOwner == queuedClientId) {
-            "Expected the lock owner to be the queued client '$queuedClientId', but was '${createdLock?.lockOwner}'"
-        }
-        createdLock?.expirationTime?.let {
-            assert(it > LocalDateTime.now()) {
-                "Expected the created lock to have a future expiration time"
-            }
-        }
-        assert(lockRepository.hasKeyInQueue(key)) {
-            "Expected the new candidate '$newClientId' to be in the queue for key=$key"
-        }
+        assertNotNull(createdLock)
+        assertEquals(queuedClientId, createdLock?.lockOwner)
+        assertTrue(createdLock?.expirationTime?.isAfter(LocalDateTime.now()) ?: false)
+        assertTrue(lockRepository.hasKeyInQueue(key))
     }
 }

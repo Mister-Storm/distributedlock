@@ -13,6 +13,7 @@ import org.misterstorm.distributedlock.infra.raft.services.ExcludeVoteResponse
 import org.misterstorm.distributedlock.infra.raft.services.GossipMessage
 import org.misterstorm.distributedlock.infra.raft.services.JoinRequest
 import org.misterstorm.distributedlock.infra.raft.services.ReplicateRequest
+import org.misterstorm.distributedlock.infra.raft.services.SnapshotResponse
 import org.misterstorm.distributedlock.web.routes.spec.RaftRoutesSpec
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.RestController
@@ -95,6 +96,18 @@ class RaftRoutes(
             "locks_in_queue" to lockRepository.getAllInQueue(),
         )
     )
+
+    override fun snapshot(): ResponseEntity<*> {
+        if (!nodeState.isLeader()) {
+            return ResponseEntity.status(403).body("Not the leader")
+        }
+        return ResponseEntity.ok(
+            SnapshotResponse(
+                locks = lockRepository.getAllLocks().filter { !it.isExpired() },
+                queue = lockRepository.getAllInQueue(),
+            )
+        )
+    }
 
     override fun join(request: JoinRequest): ResponseEntity<GossipMessage> {
         nodeRegistry.merge(mapOf(request.name to request.url))

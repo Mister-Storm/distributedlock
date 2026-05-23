@@ -1,5 +1,6 @@
 package org.misterstorm.distributedlock.infra.raft.services
 
+import org.misterstorm.distributedlock.core.repository.LockRepository
 import org.misterstorm.distributedlock.infra.raft.models.NodeRegistry
 import org.misterstorm.distributedlock.infra.raft.models.NodeState
 import org.slf4j.LoggerFactory
@@ -20,6 +21,7 @@ class NodeJoinService(
     private val electionService: ElectionService,
     private val httpClient: HttpClient,
     private val objectMapper: ObjectMapper,
+    private val lockRepository: LockRepository,
 ) : ApplicationRunner {
 
     private val logger = LoggerFactory.getLogger(javaClass)
@@ -59,6 +61,8 @@ class NodeJoinService(
 
         if (foundAnyPeer && nodeState.leaderId.get() == null) {
             discoverLeader()
+        } else if (foundAnyPeer) {
+            nodeState.leaderUrl.get()?.let { syncStateFromLeader(it) }
         }
 
         if (!foundAnyPeer) {
@@ -86,11 +90,35 @@ class NodeJoinService(
                     if (leaderId != null && leaderUrl != null) {
                         nodeState.becomeFollower(term, leaderId, leaderUrl)
                         logger.info("[${nodeState.nodeName}] Discovered leader: $leaderId at $leaderUrl (term=$term)")
+                        syncStateFromLeader(leaderUrl)
                     }
                 }
             }.onFailure {
                 logger.warn("[${nodeState.nodeName}] Could not get status from $peer: ${it.message}")
             }
+        }
+    }
+
+    private fun syncStateFromLeader(leaderUrl: String) {
+        runCatching {
+            val request = HttpRequest.newBuilder()
+                .uri(URI.create("$leaderUrl/raft/snapshot"))
+                .GET()
+                .timeout(Duration.ofSeconds(5))
+                .build()
+            val response = httpClient.send(request, HttpResponse.BodyHandlers.ofString())
+            if (response.statusCode() == 200) {
+                val snapshot = objectMapper.readValue(response.body(), SnapshotResponse::class.java)
+                lockRepository.loadSnapshot(snapshot.locks, snapshot.queue)
+                logger.info(
+                    "[${nodeState.nodeName}] State synced from leader $leaderUrl: " +
+                        "${snapshot.locks.size} locks, ${snapshot.queue.size} queued"
+                )
+            } else {
+                logger.warn("[${nodeState.nodeName}] Snapshot request to $leaderUrl returned ${response.statusCode()}")
+            }
+        }.onFailure {
+            logger.warn("[${nodeState.nodeName}] Failed to sync state from leader $leaderUrl: ${it.message}")
         }
     }
 }

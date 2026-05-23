@@ -18,4 +18,5 @@ open class TestLockRepository : LockRepository {
     override fun commit(idempotencyKey: String) = TODO("Not yet implemented")
     override fun hasPending(idempotencyKey: String): Boolean = TODO("Not yet implemented")
     override fun getPending(idempotencyKey: String): ReplicaEntry? = TODO("Not yet implemented")
+    override fun loadSnapshot(locks: Collection<Lock>, queue: Collection<Lock>) = TODO("Not yet implemented")
 }

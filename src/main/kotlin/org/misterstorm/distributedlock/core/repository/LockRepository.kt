@@ -18,4 +18,6 @@ interface LockRepository {
     fun commit(idempotencyKey: String)
     fun hasPending(idempotencyKey: String): Boolean
     fun getPending(idempotencyKey: String): ReplicaEntry?
+
+    fun loadSnapshot(locks: Collection<Lock>, queue: Collection<Lock>)
 }
