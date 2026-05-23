@@ -14,6 +14,7 @@ class LockRepositoryInMemory : LockRepository {
     private val store = ConcurrentHashMap<String, Lock>()
     private val queue = CopyOnWriteArrayList<Lock>()
     private val pendingEntries = ConcurrentHashMap<String, ReplicaEntry>()
+    override fun getAllLocks(): Collection<Lock> = store.values
 
     override fun create(lock: Lock): Lock {
         store.compute(lock.key) { _, existing ->
@@ -30,6 +31,8 @@ class LockRepositoryInMemory : LockRepository {
         store.replace(lock.key, lock)
         return store.getOrDefault(lock.key, lock)
     }
+
+    override fun getAllInQueue(): Collection<Lock> = queue
 
     override fun addQueue(lock: Lock): Boolean = queue.add(lock)
     override fun hasKeyInQueue(key: String): Boolean = queue.any { it.key == key }

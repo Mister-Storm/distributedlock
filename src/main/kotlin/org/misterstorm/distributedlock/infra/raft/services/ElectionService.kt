@@ -18,7 +18,7 @@ class ElectionService(private val nodeState: NodeState,
                       private val httpClient: HttpClient,
                       private val objectMapper: ObjectMapper
 ) {
-    @Scheduled(fixedRate = 60000)
+    @Scheduled(fixedRateString = "\${distributedlock.node.electionTimeout:6000}")
     fun checkElectionTimeout() {
         if(nodeState.isLeader() || !nodeState.isHeartbeatExpired()) {
             return

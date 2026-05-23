@@ -1,8 +1,11 @@
 package org.misterstorm.distributedlock.web.routes.spec
 
 import org.misterstorm.distributedlock.infra.raft.services.CommitRequest
+import org.misterstorm.distributedlock.infra.raft.services.ExcludeVoteRequest
+import org.misterstorm.distributedlock.infra.raft.services.ExcludeVoteResponse
 import org.misterstorm.distributedlock.infra.raft.services.GossipMessage
 import org.misterstorm.distributedlock.infra.raft.requests.HeartbeatRequest
+import org.misterstorm.distributedlock.infra.raft.services.JoinRequest
 import org.misterstorm.distributedlock.infra.raft.services.ReplicateRequest
 import org.misterstorm.distributedlock.infra.raft.requests.VoteRequest
 import org.misterstorm.distributedlock.infra.raft.requests.VoteResponse
@@ -26,4 +29,8 @@ interface RaftRoutesSpec {
     fun commit(@RequestBody request: CommitRequest): ResponseEntity<*>
     @GetMapping("/status")
     fun status(): ResponseEntity<*>
+    @PostMapping("/join")
+    fun join(@RequestBody request: JoinRequest): ResponseEntity<GossipMessage>
+    @PostMapping("/exclude-vote")
+    fun excludeVote(@RequestBody request: ExcludeVoteRequest): ResponseEntity<ExcludeVoteResponse>
 }

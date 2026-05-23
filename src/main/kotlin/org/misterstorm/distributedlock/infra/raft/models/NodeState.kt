@@ -14,7 +14,7 @@ class NodeState(
     @Value("\${distributedlock.node.url}") val nodeUrl: String,
     @Value("\${distributedlock.node.electionTimeout}") private val electionTimeout: Long,
     ) {
-    val role: AtomicReference<Role> = AtomicReference(Role.FOLLOWER)
+    val role: AtomicReference<Role> = AtomicReference(Role.CANDIDATE)
     val currentTerm: AtomicLong = AtomicLong(0)
     val votedFor: AtomicReference<String?> = AtomicReference<String?>(null)
     val leaderId: AtomicReference<String?> = AtomicReference<String?>(null)
