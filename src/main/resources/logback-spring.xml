@@ -1,12 +1,22 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <configuration>
-
     <appender name="JSON_CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder class="net.logstash.logback.encoder.LogstashEncoder"/>
+    </appender>
+    <appender name="JSON_FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <file>logs/${NODE_NAME:-node}.log</file>
+        <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
+            <fileNamePattern>logs/${NODE_NAME:-node}.%d{yyyy-MM-dd}.%i.log.gz</fileNamePattern>
+            <maxFileSize>50MB</maxFileSize>
+            <maxHistory>3</maxHistory>
+            <totalSizeCap>200MB</totalSizeCap>
+        </rollingPolicy>
         <encoder class="net.logstash.logback.encoder.LogstashEncoder"/>
     </appender>
 
     <root level="INFO">
         <appender-ref ref="JSON_CONSOLE"/>
+        <appender-ref ref="JSON_FILE"/>
     </root>
 
 </configuration>

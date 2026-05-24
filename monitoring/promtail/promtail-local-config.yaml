@@ -1,0 +1,82 @@
+server:
+  http_listen_port: 9080
+  grpc_listen_port: 0
+  log_level: warn
+
+positions:
+  filename: /tmp/positions-local.yaml
+
+clients:
+  - url: http://loki:3100/loki/api/v1/push
+    batchwait: 1s
+    batchsize: 1048576
+
+scrape_configs:
+  - job_name: distributedlock-local
+
+    # ── File-based discovery ─────────────────────────────────────────────────
+    # Monitora TODOS os arquivos *.log dentro de /logs (mapeado para ./logs
+    # no host via volume no docker-compose.observability.yml).
+    #
+    # Novos nós: basta iniciá-los com NODE_NAME=nodeX — o arquivo logs/nodeX.log
+    # aparece e o Promtail o detecta em até `discovery_interval` segundos
+    # (padrão ~5s via inotify).
+    static_configs:
+      - targets: ["localhost"]
+        labels:
+          job: distributedlock
+          __path__: /logs/*.log
+
+    # ── Relabel: extrai o nome do nó a partir do nome do arquivo ─────────────
+    # /logs/node1.log  →  service=node1
+    # /logs/node42.log →  service=node42
+    relabel_configs:
+      - source_labels: [__path__]
+        regex: .*/([^/]+)\.log$
+        target_label: service
+
+    # ── Pipeline: parseia o JSON emitido pelo LogstashEncoder ────────────────
+    pipeline_stages:
+
+      # 1. Parseia a linha como JSON (LogstashEncoder escreve uma linha JSON por evento)
+      - json:
+          expressions:
+            level:           level
+            logger:          logger_name
+            thread:          thread_name
+            msg:             message
+            # — campos MDC promovidos ao root pelo LogstashEncoder —
+            trace_id:        traceId
+            lock_key:        lockKey
+            client_id:       clientId
+            raft_node:       node
+            raft_term:       term
+            operation:       operation
+            error_type:      errorType
+            peer:            peer
+            idempotency_key: idempotencyKey
+
+      # 2. Promove campos de baixa cardinalidade como labels de stream (indexados)
+      - labels:
+          level:
+          service:
+          raft_node:
+          operation:
+
+      # 3. Campos de alta cardinalidade como structured metadata (não indexados)
+      - structured_metadata:
+          trace_id:
+          lock_key:
+          client_id:
+          raft_term:
+          peer:
+          idempotency_key:
+          error_type:
+          logger:
+          thread:
+
+      # 4. Substitui a linha de log pelo campo "message" limpo
+      - output:
+          source: msg
+
+

@@ -1,0 +1,12 @@
+.git
+.gradle
+.idea
+.kotlin
+build/
+*.iml
+*.md
+src/test/
+monitoring/
+docker-compose*.yml
+Dockerfile
+
