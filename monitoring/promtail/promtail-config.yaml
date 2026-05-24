@@ -1,0 +1,93 @@
+server:
+  http_listen_port: 9080
+  grpc_listen_port: 0
+  log_level: warn
+
+positions:
+  filename: /tmp/positions.yaml
+
+clients:
+  - url: http://loki:3100/loki/api/v1/push
+    # Batch logs to reduce HTTP overhead
+    batchwait: 1s
+    batchsize: 1048576
+
+scrape_configs:
+  - job_name: distributedlock
+
+    # ── Docker Service Discovery ─────────────────────────────────────────────
+    # Promtail reads /var/run/docker.sock and discovers ALL containers that
+    # carry the label  logging=promtail  (set in docker-compose).
+    # refresh_interval controls how quickly NEW nodes are discovered.
+    docker_sd_configs:
+      - host: unix:///var/run/docker.sock
+        refresh_interval: 10s
+        filters:
+          - name: label
+            values: ["logging=promtail"]
+
+    # ── Relabel: extract Docker metadata as Loki stream labels ───────────────
+    relabel_configs:
+      # Strip leading "/" from container name  (/distributedlock-node1 → distributedlock-node1)
+      - source_labels: [__meta_docker_container_name]
+        regex: /(.*)
+        target_label: container
+
+      # Compose service name (node1, node2, …)
+      - source_labels: [__meta_docker_container_label_com_docker_compose_service]
+        target_label: service
+
+      # Keep only containers from this compose project
+      - source_labels: [__meta_docker_container_label_com_docker_compose_project]
+        regex: distributedlock
+        action: keep
+
+    # ── Pipeline: parse the JSON emitted by LogstashEncoder ─────────────────
+    pipeline_stages:
+
+      # 1. Unwrap the Docker log-driver envelope  {"log":"...\n","stream":"stdout",...}
+      - docker: {}
+
+      # 2. Parse the JSON payload that LogstashEncoder writes to stdout.
+      #    MDC fields are promoted to the root level by LogstashEncoder.
+      - json:
+          expressions:
+            level:          level
+            logger:         logger_name
+            thread:         thread_name
+            msg:            message
+            # — MDC fields set by the application —
+            trace_id:       traceId
+            lock_key:       lockKey
+            client_id:      clientId
+            raft_node:      node
+            raft_term:      term
+            operation:      operation
+            error_type:     errorType
+            peer:           peer
+            idempotency_key: idempotencyKey
+
+      # 3. Promote selected fields to Loki stream labels (low cardinality only)
+      - labels:
+          level:
+          service:
+          raft_node:
+          operation:
+
+      # 4. Store high-cardinality fields as structured metadata (queryable, not indexed)
+      - structured_metadata:
+          trace_id:
+          lock_key:
+          client_id:
+          raft_term:
+          peer:
+          idempotency_key:
+          error_type:
+          logger:
+          thread:
+
+      # 5. Replace the log line with just the human-readable message
+      - output:
+          source: msg
+
+

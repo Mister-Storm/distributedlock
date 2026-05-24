@@ -1,0 +1,112 @@
+networks:
+  distributedlock-net:
+    driver: bridge
+
+volumes:
+  grafana-data:
+  loki-data:
+
+x-node-base: &node-base
+  build: .
+  restart: unless-stopped
+  networks:
+    - distributedlock-net
+  labels:
+    logging: "promtail"
+  depends_on:
+    loki:
+      condition: service_healthy
+
+services:
+
+  node1:
+    <<: *node-base
+    container_name: distributedlock-node1
+    environment:
+      NODE_NAME: node1
+      NODE_URL: http://distributedlock-proxy:${PROXY_PORT:-8080}/node1
+      SERVER_PORT: 8080
+      RAFT_SEEDS: http://node2:8080,http://node3:8080
+
+  node2:
+    <<: *node-base
+    container_name: distributedlock-node2
+    environment:
+      NODE_NAME: node2
+      NODE_URL: http://distributedlock-proxy:${PROXY_PORT:-8080}/node2
+      SERVER_PORT: 8080
+      RAFT_SEEDS: http://node1:8080,http://node3:8080
+
+  node3:
+    <<: *node-base
+    container_name: distributedlock-node3
+    environment:
+      NODE_NAME: node3
+      NODE_URL: http://distributedlock-proxy:${PROXY_PORT:-8080}/node3
+      SERVER_PORT: 8080
+      RAFT_SEEDS: http://node1:8080,http://node2:8080
+
+  nginx:
+    image: nginx:alpine
+    container_name: distributedlock-proxy
+    ports:
+      - "${PROXY_PORT:-8080}:${PROXY_PORT:-8080}"
+    volumes:
+      - ./monitoring/nginx/templates:/etc/nginx/templates:ro
+    environment:
+      PROXY_PORT: ${PROXY_PORT:-8080}
+    networks:
+      - distributedlock-net
+    depends_on:
+      - node1
+      - node2
+      - node3
+
+  loki:
+    image: grafana/loki:3.4.2
+    container_name: loki
+    ports:
+      - "3100:3100"
+    volumes:
+      - ./monitoring/loki:/etc/loki
+      - loki-data:/loki
+    command: -config.file=/etc/loki/loki-config.yaml
+    networks:
+      - distributedlock-net
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:3100/ready || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  promtail:
+    image: grafana/promtail:3.4.2
+    container_name: promtail
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./monitoring/promtail:/etc/promtail
+    command: -config.file=/etc/promtail/promtail-config.yaml
+    networks:
+      - distributedlock-net
+    depends_on:
+      loki:
+        condition: service_healthy
+
+  grafana:
+    image: grafana/grafana:12.0.0
+    container_name: grafana
+    ports:
+      - "3000:3000"
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
+      GF_AUTH_DISABLE_LOGIN_FORM: "true"
+      GF_FEATURE_TOGGLES_ENABLE: "lokiExploreLogsDefaultRange"
+    volumes:
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning
+      - grafana-data:/var/lib/grafana
+    networks:
+      - distributedlock-net
+    depends_on:
+      loki:
+        condition: service_healthy

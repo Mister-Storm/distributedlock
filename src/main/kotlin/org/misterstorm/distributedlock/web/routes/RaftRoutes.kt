@@ -15,6 +15,8 @@ import org.misterstorm.distributedlock.infra.raft.services.JoinRequest
 import org.misterstorm.distributedlock.infra.raft.services.ReplicateRequest
 import org.misterstorm.distributedlock.infra.raft.services.SnapshotResponse
 import org.misterstorm.distributedlock.web.routes.spec.RaftRoutesSpec
+import org.slf4j.LoggerFactory
+import org.slf4j.MDC
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.RestController
 import java.net.URI
@@ -29,35 +31,52 @@ class RaftRoutes(
     private val nodeRegistry: NodeRegistry,
     private val lockRepository: LockRepository,
     private val httpClient: HttpClient,
-): RaftRoutesSpec {
+) : RaftRoutesSpec {
+
+    private val log = LoggerFactory.getLogger(javaClass)
+
     override fun heartbeat(request: HeartbeatRequest): ResponseEntity<*> {
+        MDC.put("leaderName", request.leaderName)
+        MDC.put("term", request.term.toString())
         if (request.term < nodeState.currentTerm.get() || nodeState.isLeader()) {
+            log.warn("Heartbeat rejected: stale term or node is already leader")
+            MDC.remove("leaderName"); MDC.remove("term")
             return ResponseEntity.badRequest().body("Stale term")
         }
         nodeState.becomeFollower(request.term, request.leaderName, request.leaderUrl)
-        //TODO move this to another endpoint
         request.recentCommits.forEach { key ->
             if (lockRepository.hasPending(key)) {
                 lockRepository.commit(key)
             }
         }
+        log.info("Heartbeat accepted")
+        MDC.remove("leaderName"); MDC.remove("term")
         return ResponseEntity.ok().build<Unit>()
     }
 
     override fun vote(request: VoteRequest): ResponseEntity<VoteResponse> {
         val currentTerm = nodeState.currentTerm.get()
+        MDC.put("candidate", request.candidateName)
+        MDC.put("requestTerm", request.term.toString())
+        MDC.put("currentTerm", currentTerm.toString())
         if (request.term < currentTerm) {
+            log.warn("Vote denied: candidate term is stale")
+            MDC.remove("candidate"); MDC.remove("requestTerm"); MDC.remove("currentTerm")
             return ResponseEntity.ok(VoteResponse(currentTerm, false))
         }
         val alreadyVoted = nodeState.votedFor.get()
         val canVote = alreadyVoted == null || alreadyVoted == request.candidateName
         return if (canVote) {
-            val vote = if(nodeState.nodeName > request.candidateName) nodeState.nodeName else request.candidateName
+            val vote = if (nodeState.nodeName > request.candidateName) nodeState.nodeName else request.candidateName
             nodeState.voteFor(vote)
             nodeRegistry.merge(mapOf(request.candidateName to request.candidateUrl))
+            log.info("Vote granted")
+            MDC.remove("candidate"); MDC.remove("requestTerm"); MDC.remove("currentTerm")
             ResponseEntity.ok(VoteResponse(request.term, true))
         } else {
+            log.info("Vote denied: already voted in this term")
             nodeState.clearVotedFor()
+            MDC.remove("candidate"); MDC.remove("requestTerm"); MDC.remove("currentTerm")
             ResponseEntity.ok(VoteResponse(currentTerm, false))
         }
     }
@@ -68,17 +87,25 @@ class RaftRoutes(
     }
 
     override fun replicate(request: ReplicateRequest): ResponseEntity<*> {
+        MDC.put("idempotencyKey", request.idempotencyKey)
+        MDC.put("operation", request.operation.name)
+        MDC.put("lockKey", request.lock.key)
         if (lockRepository.hasPending(request.idempotencyKey)) {
+            log.info("Replicate request already pending (idempotent)")
+            MDC.remove("idempotencyKey"); MDC.remove("operation"); MDC.remove("lockKey")
             return ResponseEntity.ok().build<Unit>()
         }
-        lockRepository.savePending(
-            ReplicaEntry(request.idempotencyKey, request.operation, request.lock)
-        )
+        lockRepository.savePending(ReplicaEntry(request.idempotencyKey, request.operation, request.lock))
+        log.info("Replicate request accepted and saved as pending")
+        MDC.remove("idempotencyKey"); MDC.remove("operation"); MDC.remove("lockKey")
         return ResponseEntity.ok().build<Unit>()
     }
 
     override fun commit(request: CommitRequest): ResponseEntity<*> {
+        MDC.put("idempotencyKey", request.idempotencyKey)
         lockRepository.commit(request.idempotencyKey)
+        log.info("Commit applied")
+        MDC.remove("idempotencyKey")
         return ResponseEntity.ok().build<Unit>()
     }
 
@@ -98,9 +125,14 @@ class RaftRoutes(
     )
 
     override fun snapshot(): ResponseEntity<*> {
+        MDC.put("node", nodeState.nodeName)
         if (!nodeState.isLeader()) {
+            log.warn("Snapshot request rejected: node is not the leader")
+            MDC.remove("node")
             return ResponseEntity.status(403).body("Not the leader")
         }
+        log.info("Snapshot requested by follower")
+        MDC.remove("node")
         return ResponseEntity.ok(
             SnapshotResponse(
                 locks = lockRepository.getAllLocks().filter { !it.isExpired() },
@@ -110,11 +142,16 @@ class RaftRoutes(
     }
 
     override fun join(request: JoinRequest): ResponseEntity<GossipMessage> {
+        MDC.put("joiningNode", request.name)
+        MDC.put("joiningUrl", request.url)
         nodeRegistry.merge(mapOf(request.name to request.url))
+        log.info("Node joined the cluster")
+        MDC.remove("joiningNode"); MDC.remove("joiningUrl")
         return ResponseEntity.ok(GossipMessage(nodeRegistry.getAllNodes()))
     }
 
     override fun excludeVote(request: ExcludeVoteRequest): ResponseEntity<ExcludeVoteResponse> {
+        MDC.put("suspectUrl", request.suspectUrl)
         val canReach = runCatching {
             val response = httpClient.send(
                 HttpRequest.newBuilder()
@@ -126,6 +163,9 @@ class RaftRoutes(
             )
             response.statusCode() == 200
         }.getOrDefault(false)
+        MDC.put("canReach", canReach.toString())
+        log.info("Exclude vote cast")
+        MDC.remove("suspectUrl"); MDC.remove("canReach")
         return ResponseEntity.ok(ExcludeVoteResponse(exclude = !canReach))
     }
 }

@@ -1,0 +1,34 @@
+# Docker's internal DNS resolver — required for dynamic $variable upstreams in proxy_pass
+resolver 127.0.0.11 valid=5s;
+
+server {
+    listen ${PROXY_PORT};
+
+    # Dynamic routing: the first path segment is the node name.
+    # /node1/lock           → node1:8080/lock
+    # /node2/raft/heartbeat → node2:8080/raft/heartbeat
+    #
+    # Adding a new node requires ONLY adding its service to docker-compose.yml.
+    # No changes to this file are ever needed.
+    location ~ ^/([^/]+)(/.+)$ {
+        set $node_upstream $1;
+        set $path_rest     $2;
+
+        proxy_pass http://$node_upstream:8080$path_rest;
+
+        # Rewrite Location headers coming from app containers.
+        # App nodes advertise NODE_URL = http://distributedlock-proxy:PORT/nodeX,
+        # so redirect responses look like:
+        #   Location: http://distributedlock-proxy:PORT/nodeX/lock
+        # We replace the host with $http_host (whatever host the caller used):
+        #  - External clients (Host: localhost:8080) get → http://localhost:8080/nodeX/lock  ✓
+        #  - Internal nodes  (Host: distributedlock-proxy:PORT) stay unchanged               ✓
+        proxy_redirect ~^http://distributedlock-proxy:${PROXY_PORT}(/.*)$ http://$http_host$1;
+
+        proxy_set_header Host             $host;
+        proxy_set_header X-Real-IP        $remote_addr;
+        proxy_set_header X-Forwarded-For  $proxy_add_x_forwarded_for;
+    }
+}
+
+

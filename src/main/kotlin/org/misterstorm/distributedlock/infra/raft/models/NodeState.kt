@@ -1,6 +1,8 @@
 package org.misterstorm.distributedlock.infra.raft.models
 
 import org.misterstorm.distributedlock.core.models.Role
+import org.slf4j.LoggerFactory
+import org.slf4j.MDC
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.stereotype.Component
 import java.time.Duration
@@ -13,7 +15,8 @@ class NodeState(
     @Value("\${distributedlock.node.name}") val nodeName: String,
     @Value("\${distributedlock.node.url}") val nodeUrl: String,
     @Value("\${distributedlock.node.electionTimeout}") private val electionTimeout: Long,
-    ) {
+) {
+    private val log = LoggerFactory.getLogger(javaClass)
     val role: AtomicReference<Role> = AtomicReference(Role.CANDIDATE)
     val currentTerm: AtomicLong = AtomicLong(0)
     val votedFor: AtomicReference<String?> = AtomicReference<String?>(null)
@@ -21,21 +24,17 @@ class NodeState(
     val leaderUrl: AtomicReference<String?> = AtomicReference<String?>(null)
     val lastHeartbeat: AtomicReference<Instant> = AtomicReference(Instant.now())
 
-    fun resetHeartbeatTimer()  = lastHeartbeat.set(Instant.now())
+    fun resetHeartbeatTimer() = lastHeartbeat.set(Instant.now())
 
     fun isHeartbeatExpired(): Boolean = Duration.between(
-            lastHeartbeat.get(),
-            Instant.now()
-        ).toMillis() > electionTimeout
+        lastHeartbeat.get(), Instant.now()
+    ).toMillis() > electionTimeout
 
     fun isLeader(): Boolean = role.get() == Role.LEADER
 
-    fun incrementTerm() : Long = currentTerm.incrementAndGet()
-    fun becomeFollower(
-        term: Long,
-        leader: String?,
-        url: String?,
-    ) {
+    fun incrementTerm(): Long = currentTerm.incrementAndGet()
+
+    fun becomeFollower(term: Long, leader: String?, url: String?) {
         currentTerm.set(term)
         leaderUrl.set(url)
         leaderId.set(leader)
@@ -43,10 +42,12 @@ class NodeState(
         votedFor.set(null)
         resetHeartbeatTimer()
 
-        println(
-            "[$nodeName] became FOLLOWER " +
-                    "term=$term leader=$leader"
-        )
+        MDC.put("node", nodeName)
+        MDC.put("term", term.toString())
+        MDC.put("leader", leader)
+        MDC.put("leaderUrl", url)
+        log.info("Node transitioned to FOLLOWER")
+        MDC.remove("node"); MDC.remove("term"); MDC.remove("leader"); MDC.remove("leaderUrl")
     }
 
     fun becomeCandidate() {
@@ -56,24 +57,25 @@ class NodeState(
         leaderId.set(null)
         leaderUrl.set(null)
         resetHeartbeatTimer()
-        println(
-            "[$nodeName] became CANDIDATE " +
-                    "term=${currentTerm.get()}"
-        )
+
+        MDC.put("node", nodeName)
+        MDC.put("term", currentTerm.get().toString())
+        log.info("Node transitioned to CANDIDATE")
+        MDC.remove("node"); MDC.remove("term")
     }
 
     fun becomeLeader() {
         role.set(Role.LEADER)
         leaderId.set(nodeName)
         leaderUrl.set(nodeUrl)
-        println(
-            "[$nodeName] became LEADER " +
-                    "term=${currentTerm.get()}"
-        )
+
+        MDC.put("node", nodeName)
+        MDC.put("term", currentTerm.get().toString())
+        log.info("Node transitioned to LEADER")
+        MDC.remove("node"); MDC.remove("term")
     }
 
-    fun voteFor(candidateId: String) =
-        votedFor.set(candidateId)
+    fun voteFor(candidateId: String) = votedFor.set(candidateId)
 
     fun clearVotedFor() = votedFor.set(null)
 
