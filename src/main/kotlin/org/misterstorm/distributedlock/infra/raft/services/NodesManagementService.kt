@@ -2,6 +2,7 @@ package org.misterstorm.distributedlock.infra.raft.services
 
 import org.misterstorm.distributedlock.infra.raft.models.NodeRegistry
 import org.slf4j.LoggerFactory
+import org.slf4j.MDC
 import org.springframework.scheduling.annotation.Scheduled
 import org.springframework.stereotype.Service
 import tools.jackson.databind.ObjectMapper
@@ -32,17 +33,23 @@ class NodesManagementService(
                         .build(),
                     HttpResponse.BodyHandlers.ofString()
                 )
+                MDC.put("peer", peer)
                 if (response.statusCode() != 200) {
-                    logger.warn("Node $peer is unresponsive")
+                    MDC.put("statusCode", response.statusCode().toString())
+                    logger.warn("Peer health check returned non-200")
+                    MDC.remove("statusCode")
                     failuresNodes.incrementFailure(peer)
                 } else {
                     failuresNodes.resetFail(peer)
                 }
-            }.onFailure {
-                logger.warn("Failed to ping node $peer: ${it.message}")
+                MDC.remove("peer")
+            }.onFailure { ex ->
+                MDC.put("peer", peer)
+                MDC.put("error", ex.message)
+                logger.warn("Failed to ping peer")
+                MDC.remove("peer"); MDC.remove("error")
                 failuresNodes.incrementFailure(peer)
             }
-
         }
         startExclusionProcess()
     }
@@ -52,10 +59,8 @@ class NodesManagementService(
 
         excludeCandidates.forEach { suspectUrl ->
             val healthyPeers = nodeRegistry.getPeerUrls().filter { it != suspectUrl }
-
             var excludeVotes = 1
             var totalVoters = 1
-
             val requestBody = objectMapper.writeValueAsString(ExcludeVoteRequest(suspectUrl))
 
             healthyPeers.forEach { peer ->
@@ -74,25 +79,34 @@ class NodesManagementService(
                         val vote = objectMapper.readValue(response.body(), ExcludeVoteResponse::class.java)
                         if (vote.exclude) excludeVotes++
                     }
-                }.onFailure {
-                    logger.warn("Failed to get exclude vote from $peer: ${it.message}")
+                }.onFailure { ex ->
+                    MDC.put("peer", peer)
+                    MDC.put("suspectUrl", suspectUrl)
+                    MDC.put("error", ex.message)
+                    logger.warn("Failed to get exclusion vote from peer")
+                    MDC.remove("peer"); MDC.remove("suspectUrl"); MDC.remove("error")
                 }
             }
 
             val quorum = totalVoters / 2 + 1
+            MDC.put("suspectUrl", suspectUrl)
+            MDC.put("votes", excludeVotes.toString())
+            MDC.put("totalVoters", totalVoters.toString())
             if (excludeVotes >= quorum) {
-                logger.warn("Quorum reached ($excludeVotes/$totalVoters): excluding $suspectUrl")
+                logger.warn("Quorum reached for exclusion, removing peer")
                 nodeRegistry.remove(suspectUrl)
                 failuresNodes.remove(suspectUrl)
             } else {
-                logger.info("Quorum NOT reached ($excludeVotes/$totalVoters): keeping $suspectUrl, resetting failures")
+                logger.info("Quorum NOT reached for exclusion, keeping peer")
                 failuresNodes.resetFail(suspectUrl)
             }
+            MDC.remove("suspectUrl"); MDC.remove("votes"); MDC.remove("totalVoters")
         }
     }
 
     fun ConcurrentHashMap<String, Int>.incrementFailure(node: String) =
         this.merge(node, 1) { old, _ -> old + 1 }
+
     fun ConcurrentHashMap<String, Int>.resetFail(node: String) =
         this.merge(node, 0) { _, _ -> 0 }
 

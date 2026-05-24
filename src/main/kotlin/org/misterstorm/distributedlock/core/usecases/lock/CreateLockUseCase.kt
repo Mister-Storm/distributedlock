@@ -23,19 +23,21 @@ class CreateLockUseCase(
     private val expirationTime: Long,
     private val nodeState: NodeState,
     private val replicationService: RaftReplicationService,
-) :
-    AbstractUseCase<LockCandidate, Either<BusinessError, Lock>>() {
+) : AbstractUseCase<LockCandidate, Either<BusinessError, Lock>>() {
+
     override suspend fun execute(input: LockCandidate): Either<BusinessError, Lock> =
         verifyLeadership(nodeState, { returnLock(input) }, { BusinessError.NotLeader(nodeState.leaderUrl.get()) })
 
-
     private fun returnLock(input: LockCandidate): Either<BusinessError, Lock> {
-        MDC.clear()
         MDC.put("clientId", input.clientId)
-        MDC.put("key", input.key)
+        MDC.put("lockKey", input.key)
+
         val result: Either<BusinessError, Lock> = either {
             lockRepository.getByKey(input.key)?.let { lock ->
                 if (!lock.isExpired()) {
+                    MDC.put("existingOwner", lock.lockOwner)
+                    log.warn("Lock creation denied: lock already exists and is not expired")
+                    MDC.remove("existingOwner")
                     raise(BusinessError.LockAlreadyExists(input.key))
                 }
             }
@@ -50,46 +52,52 @@ class CreateLockUseCase(
                 lockRepository.create(
                     Lock(
                         input.key, input.clientId,
-                        LocalDateTime
-                            .now().plusSeconds(expirationTime),
+                        LocalDateTime.now().plusSeconds(expirationTime),
                     )
                 )
             }.fold(
                 onSuccess = { it },
                 onFailure = { error ->
                     if (error is LockAlreadyExistsException) {
-                        verifyQuorum( {replicationService.replicate(LockOperation.CREATE, error.existentLock) },
+                        verifyQuorum(
+                            { replicationService.replicate(LockOperation.CREATE, error.existentLock) },
                             error.existentLock,
-                            lockRepository::release, lockRepository::addQueue).fold(
-                            { error -> raise(error) },
+                            lockRepository::release, lockRepository::addQueue
+                        ).fold(
+                            { err -> raise(err) },
                             { it }
                         )
                         raise(BusinessError.LockAlreadyExists(input.key))
                     }
-
+                    log.error("Unexpected error during lock creation")
                     raise(BusinessError.UnexpectedException())
                 }
             )
-            verifyQuorum( {replicationService.replicate(LockOperation.CREATE, lock) },
+            verifyQuorum(
+                { replicationService.replicate(LockOperation.CREATE, lock) },
                 lock,
                 lockRepository::release,
-                lockRepository::addQueue).fold(
-                { error -> raise(error) },
+                lockRepository::addQueue
+            ).fold(
+                { err -> raise(err) },
                 { it }
             )
         }
-        result.onRight { log.info("Lock created successfully") }
-        result.onLeft {
-            log.warn("Lock creation error")
+
+        result.onRight {
+            log.info("Lock created successfully")
+        }
+        result.onLeft { error ->
+            MDC.put("errorType", error::class.simpleName)
+            log.warn("Lock creation failed")
+            MDC.remove("errorType")
             failLockPublisher.publish(
-                Lock(
-                    input.key, input.clientId,
-                    LocalDateTime
-                        .now().plusSeconds(expirationTime),
-                )
+                Lock(input.key, input.clientId, LocalDateTime.now().plusSeconds(expirationTime))
             )
         }
-        MDC.clear()
+
+        MDC.remove("clientId")
+        MDC.remove("lockKey")
         return result
     }
 

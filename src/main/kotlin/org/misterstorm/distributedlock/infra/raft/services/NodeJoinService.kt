@@ -4,6 +4,7 @@ import org.misterstorm.distributedlock.core.repository.LockRepository
 import org.misterstorm.distributedlock.infra.raft.models.NodeRegistry
 import org.misterstorm.distributedlock.infra.raft.models.NodeState
 import org.slf4j.LoggerFactory
+import org.slf4j.MDC
 import org.springframework.boot.ApplicationArguments
 import org.springframework.boot.ApplicationRunner
 import org.springframework.stereotype.Component
@@ -27,9 +28,12 @@ class NodeJoinService(
     private val logger = LoggerFactory.getLogger(javaClass)
 
     override fun run(args: ApplicationArguments) {
+        MDC.put("node", nodeState.nodeName)
         val seeds = nodeRegistry.getPeerUrls()
+
         if (seeds.isEmpty()) {
-            logger.info("[${nodeState.nodeName}] No seeds configured, starting election immediately")
+            logger.info("No seeds configured, starting election immediately")
+            MDC.remove("node")
             electionService.startElection()
             return
         }
@@ -48,14 +52,25 @@ class NodeJoinService(
                     .build()
 
                 val response = httpClient.send(request, HttpResponse.BodyHandlers.ofString())
+                MDC.put("seed", seed)
                 if (response.statusCode() == 200) {
                     val gossip = objectMapper.readValue(response.body(), GossipMessage::class.java)
                     nodeRegistry.merge(gossip.nodes)
-                    logger.info("[${nodeState.nodeName}] Joined via $seed, discovered ${gossip.nodes.size} nodes")
+                    MDC.put("discoveredNodes", gossip.nodes.size.toString())
+                    logger.info("Joined cluster via seed")
+                    MDC.remove("discoveredNodes")
                     foundAnyPeer = true
+                } else {
+                    MDC.put("statusCode", response.statusCode().toString())
+                    logger.warn("Join request rejected by seed")
+                    MDC.remove("statusCode")
                 }
-            }.onFailure {
-                logger.warn("[${nodeState.nodeName}] Failed to join via $seed: ${it.message}")
+                MDC.remove("seed")
+            }.onFailure { ex ->
+                MDC.put("seed", seed)
+                MDC.put("error", ex.message)
+                logger.warn("Failed to join via seed")
+                MDC.remove("seed"); MDC.remove("error")
             }
         }
 
@@ -66,7 +81,12 @@ class NodeJoinService(
         }
 
         if (!foundAnyPeer) {
-            logger.info("[${nodeState.nodeName}] No peers responded during join, starting election")
+            logger.info("No peers responded during join, starting election")
+        }
+
+        MDC.remove("node")
+
+        if (!foundAnyPeer) {
             electionService.startElection()
         }
     }
@@ -81,6 +101,7 @@ class NodeJoinService(
                     .timeout(Duration.ofSeconds(2))
                     .build()
                 val response = httpClient.send(request, HttpResponse.BodyHandlers.ofString())
+                MDC.put("peer", peer)
                 if (response.statusCode() == 200) {
                     @Suppress("UNCHECKED_CAST")
                     val status = objectMapper.readValue(response.body(), Map::class.java) as Map<String, Any?>
@@ -89,17 +110,32 @@ class NodeJoinService(
                     val term = (status["term"] as? Number)?.toLong() ?: 0L
                     if (leaderId != null && leaderUrl != null) {
                         nodeState.becomeFollower(term, leaderId, leaderUrl)
-                        logger.info("[${nodeState.nodeName}] Discovered leader: $leaderId at $leaderUrl (term=$term)")
+                        MDC.put("leader", leaderId)
+                        MDC.put("leaderUrl", leaderUrl)
+                        MDC.put("term", term.toString())
+                        logger.info("Leader discovered")
+                        MDC.remove("leader"); MDC.remove("leaderUrl"); MDC.remove("term")
+                        MDC.remove("peer")
                         syncStateFromLeader(leaderUrl)
+                        return@forEach
                     }
+                } else {
+                    MDC.put("statusCode", response.statusCode().toString())
+                    logger.warn("Status request to peer failed")
+                    MDC.remove("statusCode")
                 }
-            }.onFailure {
-                logger.warn("[${nodeState.nodeName}] Could not get status from $peer: ${it.message}")
+                MDC.remove("peer")
+            }.onFailure { ex ->
+                MDC.put("peer", peer)
+                MDC.put("error", ex.message)
+                logger.warn("Could not get status from peer")
+                MDC.remove("peer"); MDC.remove("error")
             }
         }
     }
 
     private fun syncStateFromLeader(leaderUrl: String) {
+        MDC.put("leaderUrl", leaderUrl)
         runCatching {
             val request = HttpRequest.newBuilder()
                 .uri(URI.create("$leaderUrl/raft/snapshot"))
@@ -110,16 +146,20 @@ class NodeJoinService(
             if (response.statusCode() == 200) {
                 val snapshot = objectMapper.readValue(response.body(), SnapshotResponse::class.java)
                 lockRepository.loadSnapshot(snapshot.locks, snapshot.queue)
-                logger.info(
-                    "[${nodeState.nodeName}] State synced from leader $leaderUrl: " +
-                        "${snapshot.locks.size} locks, ${snapshot.queue.size} queued"
-                )
+                MDC.put("locks", snapshot.locks.size.toString())
+                MDC.put("queued", snapshot.queue.size.toString())
+                logger.info("State synced from leader")
+                MDC.remove("locks"); MDC.remove("queued")
             } else {
-                logger.warn("[${nodeState.nodeName}] Snapshot request to $leaderUrl returned ${response.statusCode()}")
+                MDC.put("statusCode", response.statusCode().toString())
+                logger.warn("Snapshot request to leader failed")
+                MDC.remove("statusCode")
             }
-        }.onFailure {
-            logger.warn("[${nodeState.nodeName}] Failed to sync state from leader $leaderUrl: ${it.message}")
+        }.onFailure { ex ->
+            MDC.put("error", ex.message)
+            logger.warn("Failed to sync state from leader")
+            MDC.remove("error")
         }
+        MDC.remove("leaderUrl")
     }
 }
-
