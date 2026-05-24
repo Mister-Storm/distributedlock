@@ -1,5 +1,6 @@
 package org.misterstorm.distributedlock.infra.raft.models
 
+import org.misterstorm.distributedlock.core.adapter.LeaderStatus
 import org.misterstorm.distributedlock.core.models.Role
 import org.slf4j.LoggerFactory
 import org.slf4j.MDC
@@ -15,7 +16,7 @@ class NodeState(
     @Value("\${distributedlock.node.name}") val nodeName: String,
     @Value("\${distributedlock.node.url}") val nodeUrl: String,
     @Value("\${distributedlock.node.electionTimeout}") private val electionTimeout: Long,
-) {
+): LeaderStatus {
     private val log = LoggerFactory.getLogger(javaClass)
     val role: AtomicReference<Role> = AtomicReference(Role.CANDIDATE)
     val currentTerm: AtomicLong = AtomicLong(0)
@@ -30,8 +31,8 @@ class NodeState(
         lastHeartbeat.get(), Instant.now()
     ).toMillis() > electionTimeout
 
-    fun isLeader(): Boolean = role.get() == Role.LEADER
-
+    override fun isLeader(): Boolean = role.get() == Role.LEADER
+    override fun getLeaderUrl(): String? = leaderUrl.get()
     fun incrementTerm(): Long = currentTerm.incrementAndGet()
 
     fun becomeFollower(term: Long, leader: String?, url: String?) {

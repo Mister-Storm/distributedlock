@@ -1,5 +1,6 @@
 package org.misterstorm.distributedlock.infra.raft.services
 
+import org.misterstorm.distributedlock.core.adapter.ReplicationService
 import org.misterstorm.distributedlock.core.models.lock.Lock
 import org.misterstorm.distributedlock.core.models.lock.LockOperation
 import org.misterstorm.distributedlock.infra.raft.models.NodeRegistry
@@ -20,10 +21,10 @@ class RaftReplicationService(
     private val heartbeatService: HeartbeatService,
     private val httpClient: HttpClient,
     private val objectMapper: ObjectMapper,
-) {
+): ReplicationService {
     private val log = LoggerFactory.getLogger(javaClass)
 
-    fun replicate(operation: LockOperation, lock: Lock): Boolean {
+    override fun replicate(operation: LockOperation, lock: Lock): Boolean {
         val idempotencyKey = UUID.randomUUID().toString()
         val peers = nodeRegistry.getPeerUrls()
 

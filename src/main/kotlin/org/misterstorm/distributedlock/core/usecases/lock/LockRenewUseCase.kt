@@ -3,6 +3,8 @@ package org.misterstorm.distributedlock.core.usecases.lock
 import arrow.core.Either
 import arrow.core.left
 import arrow.core.right
+import org.misterstorm.distributedlock.core.adapter.LeaderStatus
+import org.misterstorm.distributedlock.core.adapter.ReplicationService
 import org.misterstorm.distributedlock.core.errors.BusinessError
 import org.misterstorm.distributedlock.core.models.lock.Lock
 import org.misterstorm.distributedlock.core.models.lock.LockCandidate
@@ -11,21 +13,19 @@ import org.misterstorm.distributedlock.core.repository.LockRepository
 import org.misterstorm.distributedlock.core.support.verifyLeadership
 import org.misterstorm.distributedlock.core.support.verifyQuorum
 import org.misterstorm.distributedlock.core.usecases.AbstractUseCase
-import org.misterstorm.distributedlock.infra.raft.models.NodeState
-import org.misterstorm.distributedlock.infra.raft.services.RaftReplicationService
 import org.slf4j.MDC
 
 class LockRenewUseCase(
     private val lockRepository: LockRepository,
-    private val nodeState: NodeState,
-    private val raftReplicationService: RaftReplicationService
+    private val nodeState: LeaderStatus,
+    private val replicationService: ReplicationService
 ) : AbstractUseCase<LockCandidate, Either<BusinessError, Lock>>() {
 
     override suspend fun execute(input: LockCandidate): Either<BusinessError, Lock> =
         verifyLeadership(
-            nodeState,
+            nodeState::isLeader,
             action = { renewLock(input) },
-            onNotLeader = { BusinessError.NotLeader(nodeState.leaderUrl.get()) }
+            onNotLeader = { BusinessError.NotLeader(nodeState.getLeaderUrl()) }
         )
 
     private fun renewLock(input: LockCandidate): Either<BusinessError, Lock> {
@@ -38,7 +38,7 @@ class LockRenewUseCase(
                 val renewed = lock.renew()
                 lockRepository.renew(renewed)
                 val quorumResult = verifyQuorum(
-                    { raftReplicationService.replicate(LockOperation.RENEW, renewed) },
+                    { replicationService.replicate(LockOperation.RENEW, renewed) },
                     lock,
                     lockRepository::release,
                     lockRepository::create

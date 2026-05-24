@@ -2,6 +2,8 @@ package org.misterstorm.distributedlock.core.usecases.lock
 
 import arrow.core.Either
 import arrow.core.left
+import org.misterstorm.distributedlock.core.adapter.LeaderStatus
+import org.misterstorm.distributedlock.core.adapter.ReplicationService
 import org.misterstorm.distributedlock.core.errors.BusinessError
 import org.misterstorm.distributedlock.core.models.lock.Lock
 import org.misterstorm.distributedlock.core.models.lock.LockCandidate
@@ -10,18 +12,16 @@ import org.misterstorm.distributedlock.core.repository.LockRepository
 import org.misterstorm.distributedlock.core.support.verifyLeadership
 import org.misterstorm.distributedlock.core.support.verifyQuorum
 import org.misterstorm.distributedlock.core.usecases.AbstractUseCase
-import org.misterstorm.distributedlock.infra.raft.models.NodeState
-import org.misterstorm.distributedlock.infra.raft.services.RaftReplicationService
 import org.slf4j.MDC
 
 class LockReleaseUseCase(
     private val lockRepository: LockRepository,
-    private val nodeState: NodeState,
-    private val raftReplicationService: RaftReplicationService
+    private val nodeState: LeaderStatus,
+    private val replicationService: ReplicationService
 ) : AbstractUseCase<LockCandidate, Either<BusinessError, Lock>>() {
     override suspend fun execute(input: LockCandidate): Either<BusinessError, Lock> =
-        verifyLeadership(nodeState, { releaseLock(input) },
-            { BusinessError.NotLeader(nodeState.leaderUrl.get()) })
+        verifyLeadership(nodeState::isLeader, { releaseLock(input) },
+            { BusinessError.NotLeader(nodeState.getLeaderUrl()) })
 
     private fun releaseLock(input: LockCandidate): Either<BusinessError, Lock> {
         MDC.put("clientId", input.clientId)
@@ -32,7 +32,7 @@ class LockReleaseUseCase(
             if (lock.lockOwner == input.clientId) {
                 lockRepository.release(lock)
                 val quorumResult = verifyQuorum(
-                    { raftReplicationService.replicate(LockOperation.RELEASE, lock) },
+                    { replicationService.replicate(LockOperation.RELEASE, lock) },
                     lock,
                     lockRepository::create
                 )
