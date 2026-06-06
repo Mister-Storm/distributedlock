@@ -8,11 +8,11 @@ import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
+import org.misterstorm.distributedlock.core.adapter.PeerRepository
 import org.misterstorm.distributedlock.core.models.Role
 import org.misterstorm.distributedlock.core.models.lock.LockOperation
 import org.misterstorm.distributedlock.core.repository.LockRepository
-import org.misterstorm.distributedlock.infra.raft.models.NodeRegistry
-import org.misterstorm.distributedlock.infra.raft.models.NodeState
+import org.misterstorm.distributedlock.infra.raft.repository.NodeStateRepositoryInMemory
 import org.misterstorm.distributedlock.infra.raft.requests.HeartbeatRequest
 import org.misterstorm.distributedlock.infra.raft.requests.VoteRequest
 import org.misterstorm.distributedlock.infra.raft.services.CommitRequest
@@ -39,8 +39,8 @@ class RaftRoutesIntegrationTest {
     @Autowired private lateinit var mvc: MockMvc
     @Autowired private lateinit var objectMapper: ObjectMapper
     @Autowired private lateinit var lockRepository: LockRepository
-    @Autowired private lateinit var nodeState: NodeState
-    @Autowired private lateinit var nodeRegistry: NodeRegistry
+    @Autowired private lateinit var nodeState: NodeStateRepositoryInMemory
+    @Autowired private lateinit var peerRepository: PeerRepository
 
     private var mockServer: ClientAndServer? = null
 
@@ -48,8 +48,8 @@ class RaftRoutesIntegrationTest {
     fun setup() {
         (lockRepository as LockRepositoryInMemory).clear()
         nodeState.becomeFollower(0L, null, null)
-        nodeRegistry.getPeerUrls().forEach { nodeRegistry.remove(it) }
-        nodeRegistry.clearPendingRemovals()
+        peerRepository.getPeerUrls().forEach { peerRepository.remove(it) }
+        peerRepository.clearPendingRemovals()
     }
 
     @AfterEach
@@ -72,10 +72,10 @@ class RaftRoutesIntegrationTest {
             .expectStatus(200)
             .execute()
 
-        assertEquals(Role.FOLLOWER, nodeState.role.get())
-        assertEquals(5L, nodeState.currentTerm.get())
-        assertEquals("leader-node", nodeState.leaderId.get())
-        assertEquals("http://leader:8080", nodeState.leaderUrl.get())
+        assertEquals(Role.FOLLOWER, nodeState.getState().role)
+        assertEquals(5L, nodeState.getState().term)
+        assertEquals("leader-node", nodeState.getState().leaderName)
+        assertEquals("http://leader:8080", nodeState.getState().leaderUrl)
     }
 
     @Test
@@ -94,7 +94,7 @@ class RaftRoutesIntegrationTest {
             .expectStatus(400)
             .execute()
 
-        assertEquals(10L, nodeState.currentTerm.get())
+        assertEquals(10L, nodeState.getState().term)
     }
 
     @Test
@@ -175,7 +175,7 @@ class RaftRoutesIntegrationTest {
             .expectJsonPath("$.voteGranted", true)
             .execute()
 
-        assertTrue(nodeRegistry.getPeerUrls().contains("http://candidate-a:8080"))
+        assertTrue(peerRepository.getPeerUrls().contains("http://candidate-a:8080"))
     }
 
     @Test
@@ -266,8 +266,8 @@ class RaftRoutesIntegrationTest {
             .expectJsonPath("$.nodes.node3", "http://node3:8082")
             .execute()
 
-        assertTrue(nodeRegistry.getPeerUrls().contains("http://node2:8081"))
-        assertTrue(nodeRegistry.getPeerUrls().contains("http://node3:8082"))
+        assertTrue(peerRepository.getPeerUrls().contains("http://node2:8081"))
+        assertTrue(peerRepository.getPeerUrls().contains("http://node3:8082"))
     }
 
     @Test
@@ -452,7 +452,7 @@ class RaftRoutesIntegrationTest {
             .expectJsonPath("$.nodes.new-node", "http://new-node:9090")
             .execute()
 
-        assertTrue(nodeRegistry.getPeerUrls().contains("http://new-node:9090"))
+        assertTrue(peerRepository.getPeerUrls().contains("http://new-node:9090"))
     }
 
     @Test
@@ -468,7 +468,7 @@ class RaftRoutesIntegrationTest {
 
     @Test
     fun `should update node url when joining node already exists in registry`() {
-        nodeRegistry.merge(mapOf("existing-node" to "http://existing:1111"))
+        peerRepository.merge(mapOf("existing-node" to "http://existing:1111"))
 
         mvc.http(objectMapper)
             .post("/raft/join")
@@ -477,8 +477,8 @@ class RaftRoutesIntegrationTest {
             .expectJsonPath("$.nodes.existing-node", "http://existing:2222")
             .execute()
 
-        assertTrue(nodeRegistry.getPeerUrls().contains("http://existing:2222"))
-        assertFalse(nodeRegistry.getPeerUrls().contains("http://existing:1111"))
+        assertTrue(peerRepository.getPeerUrls().contains("http://existing:2222"))
+        assertFalse(peerRepository.getPeerUrls().contains("http://existing:1111"))
     }
 
     @Test

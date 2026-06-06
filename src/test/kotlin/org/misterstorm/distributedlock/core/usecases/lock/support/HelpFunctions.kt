@@ -2,7 +2,7 @@ package org.misterstorm.distributedlock.core.usecases.lock.support
 
 import org.misterstorm.distributedlock.core.models.lock.Lock
 import org.misterstorm.distributedlock.core.models.lock.LockCandidate
-import org.misterstorm.distributedlock.infra.raft.models.NodeState
+import org.misterstorm.distributedlock.infra.raft.repository.NodeStateRepositoryInMemory
 import java.time.LocalDateTime
 
 private const val TEST_KEY = "test_key"
@@ -29,15 +29,16 @@ fun createLock(
 )
 
 fun createNodeState(
-    nomeName: String = "node1",
+    nodeName: String = "node1",
     nodeUrl: String = "http://localhost:8080",
-    electionTime: Long = 1000L,
-): NodeState {
-    val nodeState = NodeState(
-        nodeName = nomeName,
+    electionTimeout: Long = 1000L,
+): NodeStateRepositoryInMemory {
+    val repo = NodeStateRepositoryInMemory(
+        nodeName = nodeName,
         nodeUrl = nodeUrl,
-        electionTimeout = electionTime,
+        electionTimeout = electionTimeout,
     )
-    nodeState.becomeLeader()
-    return nodeState
+    repo.becomeLeader()
+    return repo
 }
+

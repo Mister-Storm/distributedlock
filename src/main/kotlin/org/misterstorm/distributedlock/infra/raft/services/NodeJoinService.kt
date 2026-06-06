@@ -1,8 +1,8 @@
 package org.misterstorm.distributedlock.infra.raft.services
 
+import org.misterstorm.distributedlock.core.adapter.PeerRepository
 import org.misterstorm.distributedlock.core.repository.LockRepository
-import org.misterstorm.distributedlock.infra.raft.models.NodeRegistry
-import org.misterstorm.distributedlock.infra.raft.models.NodeState
+import org.misterstorm.distributedlock.infra.raft.repository.NodeStateRepositoryInMemory
 import org.slf4j.LoggerFactory
 import org.slf4j.MDC
 import org.springframework.boot.ApplicationArguments
@@ -17,8 +17,8 @@ import java.time.Duration
 
 @Component
 class NodeJoinService(
-    private val nodeRegistry: NodeRegistry,
-    private val nodeState: NodeState,
+    private val peerRepository: PeerRepository,
+    private val nodeState: NodeStateRepositoryInMemory,
     private val electionService: ElectionService,
     private val httpClient: HttpClient,
     private val objectMapper: ObjectMapper,
@@ -28,8 +28,8 @@ class NodeJoinService(
     private val logger = LoggerFactory.getLogger(javaClass)
 
     override fun run(args: ApplicationArguments) {
-        MDC.put("node", nodeState.nodeName)
-        val seeds = nodeRegistry.getPeerUrls()
+        MDC.put("node", nodeState.getState().name)
+        val seeds = peerRepository.getPeerUrls()
 
         if (seeds.isEmpty()) {
             logger.info("No seeds configured, starting election immediately")
@@ -42,7 +42,7 @@ class NodeJoinService(
 
         seeds.forEach { seed ->
             runCatching {
-                val joinRequest = JoinRequest(name = nodeState.nodeName, url = nodeState.nodeUrl)
+                val joinRequest = JoinRequest(name = nodeState.getState().name, url = nodeState.getState().url)
                 val body = objectMapper.writeValueAsString(joinRequest)
                 val request = HttpRequest.newBuilder()
                     .uri(URI.create("$seed/raft/join"))
@@ -55,7 +55,7 @@ class NodeJoinService(
                 MDC.put("seed", seed)
                 if (response.statusCode() == 200) {
                     val gossip = objectMapper.readValue(response.body(), GossipMessage::class.java)
-                    nodeRegistry.merge(gossip.nodes)
+                    peerRepository.merge(gossip.nodes)
                     MDC.put("discoveredNodes", gossip.nodes.size.toString())
                     logger.info("Joined cluster via seed")
                     MDC.remove("discoveredNodes")
@@ -74,10 +74,10 @@ class NodeJoinService(
             }
         }
 
-        if (foundAnyPeer && nodeState.leaderId.get() == null) {
+        if (foundAnyPeer && nodeState.getState().leaderName == null) {
             discoverLeader()
         } else if (foundAnyPeer) {
-            nodeState.leaderUrl.get()?.let { syncStateFromLeader(it) }
+            nodeState.getState().leaderUrl?.let { syncStateFromLeader(it) }
         }
 
         if (!foundAnyPeer) {
@@ -92,8 +92,8 @@ class NodeJoinService(
     }
 
     private fun discoverLeader() {
-        nodeRegistry.getPeerUrls().forEach { peer ->
-            if (nodeState.leaderId.get() != null) return
+        peerRepository.getPeerUrls().forEach { peer ->
+            if (nodeState.getState().leaderName != null) return
             runCatching {
                 val request = HttpRequest.newBuilder()
                     .uri(URI.create("$peer/raft/status"))

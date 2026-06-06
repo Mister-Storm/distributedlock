@@ -1,6 +1,6 @@
 package org.misterstorm.distributedlock.infra.raft.services
 
-import org.misterstorm.distributedlock.infra.raft.models.NodeRegistry
+import org.misterstorm.distributedlock.core.adapter.PeerRepository
 import org.slf4j.LoggerFactory
 import org.slf4j.MDC
 import org.springframework.scheduling.annotation.Scheduled
@@ -15,7 +15,7 @@ import java.util.concurrent.ConcurrentHashMap
 
 @Service
 class NodesManagementService(
-    private val nodeRegistry: NodeRegistry,
+    private val peerRepository: PeerRepository,
     private val httpClient: HttpClient,
     private val objectMapper: ObjectMapper,
 ) {
@@ -24,7 +24,7 @@ class NodesManagementService(
 
     @Scheduled(fixedRate = 4000)
     fun manage() {
-        nodeRegistry.getPeerUrls().forEach { peer ->
+        peerRepository.getPeerUrls().forEach { peer ->
             runCatching {
                 val response = httpClient.send(
                     HttpRequest.newBuilder()
@@ -58,7 +58,7 @@ class NodesManagementService(
         val excludeCandidates = failuresNodes.filterValues { it > MAX_FAILURES }.keys
 
         excludeCandidates.forEach { suspectUrl ->
-            val healthyPeers = nodeRegistry.getPeerUrls().filter { it != suspectUrl }
+            val healthyPeers = peerRepository.getPeerUrls().filter { it != suspectUrl }
             var excludeVotes = 1
             var totalVoters = 1
             val requestBody = objectMapper.writeValueAsString(ExcludeVoteRequest(suspectUrl))
@@ -94,7 +94,7 @@ class NodesManagementService(
             MDC.put("totalVoters", totalVoters.toString())
             if (excludeVotes >= quorum) {
                 logger.warn("Quorum reached for exclusion, removing peer")
-                nodeRegistry.remove(suspectUrl)
+                peerRepository.remove(suspectUrl)
                 failuresNodes.remove(suspectUrl)
             } else {
                 logger.info("Quorum NOT reached for exclusion, keeping peer")

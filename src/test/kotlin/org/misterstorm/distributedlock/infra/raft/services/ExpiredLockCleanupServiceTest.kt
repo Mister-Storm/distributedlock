@@ -11,7 +11,7 @@ import org.misterstorm.distributedlock.core.models.lock.LockOperation
 import org.misterstorm.distributedlock.core.usecases.lock.support.TestLockRepository
 import org.misterstorm.distributedlock.core.usecases.lock.support.createLock
 import org.misterstorm.distributedlock.core.usecases.lock.support.createNodeState
-import org.misterstorm.distributedlock.infra.raft.models.NodeState
+import org.misterstorm.distributedlock.infra.raft.repository.NodeStateRepositoryInMemory
 import java.time.LocalDateTime
 
 class ExpiredLockCleanupServiceTest {
@@ -21,14 +21,14 @@ class ExpiredLockCleanupServiceTest {
         expirationTime = LocalDateTime.now().minusSeconds(10),
     )
 
-    private fun createFollowerNodeState(): NodeState {
-        val nodeState = NodeState(
+    private fun createFollowerNodeState(): NodeStateRepositoryInMemory {
+        val repo = NodeStateRepositoryInMemory(
             nodeName = "node2",
             nodeUrl = "http://localhost:8081",
             electionTimeout = 1000L,
         )
-        nodeState.becomeFollower(1L, "node1", "http://localhost:8080")
-        return nodeState
+        repo.becomeFollower(1L, "node1", "http://localhost:8080")
+        return repo
     }
 
     @Test

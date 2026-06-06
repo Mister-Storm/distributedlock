@@ -7,4 +7,6 @@ sealed interface BusinessError {
     class UnexpectedException: BusinessError
     data class NotLeader(val leaderUrl: String?) : BusinessError
     class QuorumNotReached : BusinessError
+    class StaleTerm : BusinessError
+    class AlreadyLeader : BusinessError
 }

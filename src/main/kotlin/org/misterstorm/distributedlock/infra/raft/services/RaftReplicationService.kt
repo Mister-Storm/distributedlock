@@ -1,9 +1,10 @@
 package org.misterstorm.distributedlock.infra.raft.services
 
+import org.misterstorm.distributedlock.core.adapter.CommitTracker
+import org.misterstorm.distributedlock.core.adapter.PeerRepository
 import org.misterstorm.distributedlock.core.adapter.ReplicationService
 import org.misterstorm.distributedlock.core.models.lock.Lock
 import org.misterstorm.distributedlock.core.models.lock.LockOperation
-import org.misterstorm.distributedlock.infra.raft.models.NodeRegistry
 import org.slf4j.LoggerFactory
 import org.slf4j.MDC
 import org.springframework.stereotype.Service
@@ -17,8 +18,8 @@ import java.util.*
 
 @Service
 class RaftReplicationService(
-    private val nodeRegistry: NodeRegistry,
-    private val heartbeatService: HeartbeatService,
+    private val peerRepository: PeerRepository,
+    private val commitTracker: CommitTracker,
     private val httpClient: HttpClient,
     private val objectMapper: ObjectMapper,
 ): ReplicationService {
@@ -26,7 +27,7 @@ class RaftReplicationService(
 
     override fun replicate(operation: LockOperation, lock: Lock): Boolean {
         val idempotencyKey = UUID.randomUUID().toString()
-        val peers = nodeRegistry.getPeerUrls()
+        val peers = peerRepository.getPeerUrls()
 
         MDC.put("operation", operation.name)
         MDC.put("lockKey", lock.key)
@@ -87,7 +88,7 @@ class RaftReplicationService(
         log.info("Replication succeeded, broadcasting commits")
         MDC.remove("acks"); MDC.remove("quorum"); MDC.remove("clusterSize")
 
-        heartbeatService.recordCommit(idempotencyKey)
+        commitTracker.recordCommit(idempotencyKey)
 
         val commitBody = objectMapper.writeValueAsString(CommitRequest(idempotencyKey))
         peers.forEach { peerUrl ->

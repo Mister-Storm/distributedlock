@@ -48,6 +48,8 @@ class CreateLockUseCase(
             )
         }
 
+        val queuedLock = Lock(input.key, input.clientId, LocalDateTime.now().plusSeconds(expirationTime))
+
         result.onRight {
             log.info("Lock created successfully")
         }
@@ -55,9 +57,13 @@ class CreateLockUseCase(
             MDC.put("errorType", error::class.simpleName)
             log.warn("Lock creation failed")
             MDC.remove("errorType")
-            failLockPublisher.publish(
-                Lock(input.key, input.clientId, LocalDateTime.now().plusSeconds(expirationTime))
-            )
+            if (error is BusinessError.LockAlreadyExists) {
+                val enqueued = replicationService.replicate(LockOperation.ENQUEUE, queuedLock)
+                if (!enqueued) {
+                    log.warn("ENQUEUE replication failed: queue entry will only exist on this node until next snapshot sync")
+                }
+            }
+            failLockPublisher.publish(queuedLock)
         }
 
         MDC.remove("clientId")

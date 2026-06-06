@@ -2,7 +2,7 @@ package org.misterstorm.distributedlock.infra.raft.services
 
 import org.misterstorm.distributedlock.core.models.lock.LockOperation
 import org.misterstorm.distributedlock.core.repository.LockRepository
-import org.misterstorm.distributedlock.infra.raft.models.NodeState
+import org.misterstorm.distributedlock.infra.raft.repository.NodeStateRepositoryInMemory
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 import org.slf4j.MDC
@@ -12,7 +12,7 @@ import org.springframework.stereotype.Service
 @Service
 class ExpiredLockCleanupService(
     private val lockRepository: LockRepository,
-    private val nodeState: NodeState,
+    private val nodeState: NodeStateRepositoryInMemory,
     private val raftReplicationService: RaftReplicationService,
 ) {
     private val log: Logger = LoggerFactory.getLogger(javaClass)

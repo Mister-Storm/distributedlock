@@ -1,8 +1,9 @@
 package org.misterstorm.distributedlock.infra.raft.services
 
+import org.misterstorm.distributedlock.core.adapter.CommitTracker
+import org.misterstorm.distributedlock.core.adapter.PeerRepository
+import org.misterstorm.distributedlock.infra.raft.repository.NodeStateRepositoryInMemory
 import org.misterstorm.distributedlock.infra.raft.requests.HeartbeatRequest
-import org.misterstorm.distributedlock.infra.raft.models.NodeRegistry
-import org.misterstorm.distributedlock.infra.raft.models.NodeState
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 import org.slf4j.MDC
@@ -15,51 +16,44 @@ import java.net.http.HttpRequest
 import java.net.http.HttpResponse
 import java.time.Duration
 import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.ConcurrentLinkedQueue
 
 @Service
 class HeartbeatService(
-    private val nodeState: NodeState,
+    private val nodeStateRepository: NodeStateRepositoryInMemory,
     private val httpClient: HttpClient,
     private val objectMapper: ObjectMapper,
-    private val nodeRegistry: NodeRegistry,
+    private val peerRepository: PeerRepository,
+    private val commitTracker: CommitTracker,
 ) {
     val log: Logger = LoggerFactory.getLogger(javaClass)
 
     companion object {
         private const val MAX_FAILURES = 3
-        private const val MAX_RECENT_COMMITS = 50
     }
 
-    private val recentCommits = ConcurrentLinkedQueue<String>()
     private val failureCount = ConcurrentHashMap<String, Int>()
 
-    fun recordCommit(idempotencyKey: String) {
-        recentCommits.add(idempotencyKey)
-        while (recentCommits.size > MAX_RECENT_COMMITS) {
-            recentCommits.poll()
-        }
-    }
 
     @Scheduled(fixedRate = 1000)
     fun sendHeartbeat() {
-        if (!nodeState.isLeader()) return
+        if (!nodeStateRepository.isLeader()) return
 
-        MDC.put("node", nodeState.nodeName)
-        MDC.put("term", nodeState.currentTerm.get().toString())
-        MDC.put("peers", nodeRegistry.getPeerUrls().size.toString())
+        val state = nodeStateRepository.getState()
+        MDC.put("node", state.name)
+        MDC.put("term", state.term.toString())
+        MDC.put("peers", peerRepository.getPeerUrls().size.toString())
         log.info("Sending heartbeat")
         MDC.remove("node"); MDC.remove("term"); MDC.remove("peers")
 
         val heartbeat = HeartbeatRequest(
-            leaderName = nodeState.nodeName,
-            term = nodeState.currentTerm.get(),
-            leaderUrl = nodeState.nodeUrl,
-            recentCommits = recentCommits.toList(),
+            leaderName = state.name,
+            term = state.term,
+            leaderUrl = state.url,
+            recentCommits = commitTracker.getRecentCommits(),
         )
         val body = objectMapper.writeValueAsString(heartbeat)
 
-        nodeRegistry.getPeerUrls().forEach { peer ->
+        peerRepository.getPeerUrls().forEach { peer ->
             val request = HttpRequest.newBuilder()
                 .uri(URI.create("$peer/raft/heartbeat"))
                 .header("Content-Type", "application/json")
@@ -73,7 +67,7 @@ class HeartbeatService(
                 MDC.put("failures", failures.toString())
                 MDC.put("maxFailures", MAX_FAILURES.toString())
                 if (failures >= MAX_FAILURES) {
-                    nodeRegistry.remove(peer)
+                    peerRepository.remove(peer)
                     failureCount.remove(peer)
                     log.warn("Peer removed after consecutive heartbeat failures")
                 } else {

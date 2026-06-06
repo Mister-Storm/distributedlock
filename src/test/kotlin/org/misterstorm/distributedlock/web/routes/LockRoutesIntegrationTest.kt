@@ -9,9 +9,9 @@ import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc
 import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.test.web.servlet.MockMvc
 import tools.jackson.databind.ObjectMapper
+import org.misterstorm.distributedlock.core.adapter.PeerRepository
 import org.misterstorm.distributedlock.core.repository.LockRepository
-import org.misterstorm.distributedlock.infra.raft.models.NodeRegistry
-import org.misterstorm.distributedlock.infra.raft.models.NodeState
+import org.misterstorm.distributedlock.infra.raft.repository.NodeStateRepositoryInMemory
 import org.misterstorm.distributedlock.infra.repository.LockRepositoryInMemory
 import java.time.LocalDateTime
 
@@ -21,14 +21,14 @@ class LockRoutesIntegrationTest {
     @Autowired private lateinit var mvc: MockMvc
     @Autowired private lateinit var objectMapper: ObjectMapper
     @Autowired private lateinit var lockRepository: LockRepository
-    @Autowired private lateinit var nodeState: NodeState
-    @Autowired private lateinit var nodeRegistry: NodeRegistry
+    @Autowired private lateinit var nodeState: NodeStateRepositoryInMemory
+    @Autowired private lateinit var peerRepository: PeerRepository
 
     @BeforeEach
     fun setup() {
         (lockRepository as LockRepositoryInMemory).clear()
         nodeState.becomeLeader()
-        nodeRegistry.getPeerUrls().forEach { nodeRegistry.remove(it) }
+        peerRepository.getPeerUrls().forEach { peerRepository.remove(it) }
     }
 
     @Test

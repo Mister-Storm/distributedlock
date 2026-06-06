@@ -42,6 +42,16 @@ data class ErrorResponse(
                 httpStatus = HttpStatus.SERVICE_UNAVAILABLE,
                 timestamp = System.currentTimeMillis()
             )
+            is BusinessError.StaleTerm -> ErrorResponse(
+                message = "Stale term",
+                httpStatus = HttpStatus.BAD_REQUEST,
+                timestamp = System.currentTimeMillis()
+            )
+            is BusinessError.AlreadyLeader -> ErrorResponse(
+                message = "This node is already the leader",
+                httpStatus = HttpStatus.BAD_REQUEST,
+                timestamp = System.currentTimeMillis()
+            )
         }
     }
 }
