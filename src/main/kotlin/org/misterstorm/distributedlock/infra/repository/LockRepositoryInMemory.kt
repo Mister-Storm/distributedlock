@@ -51,6 +51,7 @@ class LockRepositoryInMemory : LockRepository {
             }
             LockOperation.RELEASE -> store.remove(entry.lock.key)
             LockOperation.RENEW -> store.replace(entry.lock.key, entry.lock)
+            LockOperation.ENQUEUE -> if (!hasKeyInQueue(entry.lock.key)) queue.add(entry.lock)
         }
     }
 

@@ -1,6 +1,6 @@
 package org.misterstorm.distributedlock.infra.raft.services
 
-import org.misterstorm.distributedlock.infra.raft.models.NodeRegistry
+import org.misterstorm.distributedlock.core.adapter.PeerRepository
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 import org.slf4j.MDC
@@ -14,7 +14,7 @@ import java.net.http.HttpResponse
 
 @Service
 class GossipService(
-    private val nodeRegistry: NodeRegistry,
+    private val peerRepository: PeerRepository,
     private val httpClient: HttpClient,
     private val objectMapper: ObjectMapper,
 ) {
@@ -22,8 +22,8 @@ class GossipService(
 
     @Scheduled(fixedRateString = "#{'\${raft.gossipInterval:5000}'}")
     fun executeGossip() {
-        val localNodes = nodeRegistry.getAllNodes()
-        val deadNodes = nodeRegistry.getPendingRemovals()
+        val localNodes = peerRepository.getAllNodes()
+        val deadNodes = peerRepository.getPendingRemovals()
 
         MDC.put("knownNodes", localNodes.size.toString())
         MDC.put("deadNodes", deadNodes.size.toString())
@@ -31,9 +31,9 @@ class GossipService(
         MDC.remove("knownNodes"); MDC.remove("deadNodes")
 
         val requestBody = objectMapper.writeValueAsString(GossipMessage(localNodes, deadNodes))
-        nodeRegistry.clearPendingRemovals()
+        peerRepository.clearPendingRemovals()
 
-        nodeRegistry.getPeerUrls().forEach { url ->
+        peerRepository.getPeerUrls().forEach { url ->
             runCatching {
                 val request = HttpRequest.newBuilder()
                     .uri(URI.create("$url/raft/gossip"))
@@ -44,8 +44,8 @@ class GossipService(
                     MDC.put("peer", url)
                     if (response.statusCode() == 200) {
                         val gossipResponse = objectMapper.readValue(response.body(), GossipMessage::class.java)
-                        nodeRegistry.merge(gossipResponse.nodes)
-                        nodeRegistry.applyRemovals(gossipResponse.deadNodes)
+                        peerRepository.merge(gossipResponse.nodes)
+                        peerRepository.applyRemovals(gossipResponse.deadNodes)
                         MDC.put("receivedNodes", gossipResponse.nodes.size.toString())
                         MDC.put("receivedDeadNodes", gossipResponse.deadNodes.size.toString())
                         log.info("Gossip exchange successful")
@@ -54,7 +54,7 @@ class GossipService(
                         MDC.put("statusCode", response.statusCode().toString())
                         log.warn("Gossip rejected by peer, removing it")
                         MDC.remove("statusCode")
-                        nodeRegistry.remove(url)
+                        peerRepository.remove(url)
                     }
                     MDC.remove("peer")
                 }

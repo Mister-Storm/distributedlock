@@ -13,11 +13,13 @@ import org.misterstorm.distributedlock.core.support.verifyLeadership
 import org.misterstorm.distributedlock.core.support.verifyQuorum
 import org.misterstorm.distributedlock.core.usecases.AbstractUseCase
 import org.slf4j.MDC
+import java.time.LocalDateTime
 
 class LockReleaseUseCase(
     private val lockRepository: LockRepository,
     private val nodeState: LeaderStatus,
-    private val replicationService: ReplicationService
+    private val replicationService: ReplicationService,
+    private val expirationTime: Long,
 ) : AbstractUseCase<LockCandidate, Either<BusinessError, Lock>>() {
     override suspend fun execute(input: LockCandidate): Either<BusinessError, Lock> =
         verifyLeadership(nodeState::isLeader, { releaseLock(input) },
@@ -37,7 +39,10 @@ class LockReleaseUseCase(
                     lockRepository::create
                 )
                 quorumResult
-                    .onRight { log.info("Lock released successfully") }
+                    .onRight {
+                        log.info("Lock released successfully")
+                        promoteFromQueue(lock.key)
+                    }
                     .onLeft { err ->
                         MDC.put("errorType", err::class.simpleName)
                         log.warn("Lock release failed: quorum not reached")
@@ -57,5 +62,22 @@ class LockReleaseUseCase(
 
         MDC.remove("clientId"); MDC.remove("lockKey")
         return result
+    }
+
+    private fun promoteFromQueue(key: String) {
+        if (!lockRepository.hasKeyInQueue(key)) return
+        val candidate = lockRepository.dequeue(key)
+        val promoted = candidate.copy(expirationTime = LocalDateTime.now().plusSeconds(expirationTime))
+        lockRepository.create(promoted)
+        MDC.put("promotedOwner", promoted.lockOwner)
+        log.info("Promoting queued lock after explicit release")
+        val created = replicationService.replicate(LockOperation.CREATE, promoted)
+        if (!created) {
+            log.warn("Quorum not reached while promoting queued lock, re-enqueuing")
+            lockRepository.release(promoted)
+            lockRepository.addQueue(candidate)
+            replicationService.replicate(LockOperation.ENQUEUE, candidate)
+        }
+        MDC.remove("promotedOwner")
     }
 }

@@ -9,8 +9,8 @@ import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.misterstorm.distributedlock.core.models.Role
 import org.misterstorm.distributedlock.core.repository.LockRepository
-import org.misterstorm.distributedlock.infra.raft.models.NodeRegistry
-import org.misterstorm.distributedlock.infra.raft.models.NodeState
+import org.misterstorm.distributedlock.core.adapter.PeerRepository
+import org.misterstorm.distributedlock.infra.raft.repository.NodeStateRepositoryInMemory
 import org.misterstorm.distributedlock.infra.raft.services.GossipMessage
 import org.misterstorm.distributedlock.infra.raft.services.NodeJoinService
 import org.misterstorm.distributedlock.infra.raft.services.SnapshotResponse
@@ -30,8 +30,8 @@ class NodeJoinServiceIntegrationTest {
 
     @Autowired private lateinit var nodeJoinService: NodeJoinService
     @Autowired private lateinit var lockRepository: LockRepository
-    @Autowired private lateinit var nodeState: NodeState
-    @Autowired private lateinit var nodeRegistry: NodeRegistry
+    @Autowired private lateinit var nodeState: NodeStateRepositoryInMemory
+    @Autowired private lateinit var peerRepository: PeerRepository
     @Autowired private lateinit var objectMapper: ObjectMapper
 
     private var mockServer: ClientAndServer? = null
@@ -40,16 +40,16 @@ class NodeJoinServiceIntegrationTest {
     fun setup() {
         (lockRepository as LockRepositoryInMemory).clear()
         nodeState.becomeFollower(0L, null, null)
-        nodeRegistry.getPeerUrls().forEach { nodeRegistry.remove(it) }
-        nodeRegistry.clearPendingRemovals()
+        peerRepository.getPeerUrls().forEach { peerRepository.remove(it) }
+        peerRepository.clearPendingRemovals()
     }
 
     @AfterEach
     fun tearDown() {
         mockServer?.stop()
         mockServer = null
-        nodeRegistry.getPeerUrls().forEach { nodeRegistry.remove(it) }
-        nodeRegistry.clearPendingRemovals()
+        peerRepository.getPeerUrls().forEach { peerRepository.remove(it) }
+        peerRepository.clearPendingRemovals()
     }
 
     @Test
@@ -76,7 +76,7 @@ class NodeJoinServiceIntegrationTest {
             .`when`(request().withMethod("GET").withPath("/raft/snapshot"))
             .respond(response().withStatusCode(200).withContentType(MediaType.APPLICATION_JSON).withBody(snapshotBody))
 
-        nodeRegistry.merge(mapOf("mock-leader" to leaderUrl))
+        peerRepository.merge(mapOf("mock-leader" to leaderUrl))
         nodeJoinService.run(DefaultApplicationArguments(*arrayOf<String>()))
 
         assertNotNull(lockRepository.getByKey("join-lock-1"))
@@ -107,7 +107,7 @@ class NodeJoinServiceIntegrationTest {
             .`when`(request().withMethod("GET").withPath("/raft/snapshot"))
             .respond(response().withStatusCode(200).withContentType(MediaType.APPLICATION_JSON).withBody(snapshotBody))
 
-        nodeRegistry.merge(mapOf("mock-leader" to leaderUrl))
+        peerRepository.merge(mapOf("mock-leader" to leaderUrl))
         nodeJoinService.run(DefaultApplicationArguments(*arrayOf<String>()))
 
         assertTrue(lockRepository.hasKeyInQueue("join-queued-res"))
@@ -117,7 +117,7 @@ class NodeJoinServiceIntegrationTest {
     fun `should become leader when no peers respond during join`() {
         nodeJoinService.run(DefaultApplicationArguments(*arrayOf<String>()))
 
-        assertEquals(Role.LEADER, nodeState.role.get())
+        assertEquals(Role.LEADER, nodeState.getState().role)
     }
 
     @Test
@@ -149,7 +149,7 @@ class NodeJoinServiceIntegrationTest {
             .`when`(request().withMethod("GET").withPath("/raft/snapshot"))
             .respond(response().withStatusCode(200).withContentType(MediaType.APPLICATION_JSON).withBody(snapshotBody))
 
-        nodeRegistry.merge(mapOf("mock-leader" to leaderUrl))
+        peerRepository.merge(mapOf("mock-leader" to leaderUrl))
         nodeJoinService.run(DefaultApplicationArguments(*arrayOf<String>()))
 
         assertNotNull(lockRepository.getByKey("join-active"))
@@ -176,7 +176,7 @@ class NodeJoinServiceIntegrationTest {
             .`when`(request().withMethod("GET").withPath("/raft/snapshot"))
             .respond(response().withStatusCode(403))
 
-        nodeRegistry.merge(mapOf("mock-leader" to leaderUrl))
+        peerRepository.merge(mapOf("mock-leader" to leaderUrl))
         nodeJoinService.run(DefaultApplicationArguments(*arrayOf<String>()))
 
         assertTrue(lockRepository.getAllLocks().isEmpty())
@@ -205,12 +205,12 @@ class NodeJoinServiceIntegrationTest {
             .`when`(request().withMethod("GET").withPath("/raft/snapshot"))
             .respond(response().withStatusCode(200).withContentType(MediaType.APPLICATION_JSON).withBody(snapshotBody))
 
-        nodeRegistry.merge(mapOf("mock-leader" to leaderUrl))
+        peerRepository.merge(mapOf("mock-leader" to leaderUrl))
         nodeJoinService.run(DefaultApplicationArguments(*arrayOf<String>()))
 
-        assertEquals(Role.FOLLOWER, nodeState.role.get())
-        assertEquals(7L, nodeState.currentTerm.get())
-        assertEquals("mock-leader", nodeState.leaderId.get())
+        assertEquals(Role.FOLLOWER, nodeState.getState().role)
+        assertEquals(7L, nodeState.getState().term)
+        assertEquals("mock-leader", nodeState.getState().leaderName)
     }
 }
 

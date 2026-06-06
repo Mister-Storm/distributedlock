@@ -18,7 +18,7 @@ import org.misterstorm.distributedlock.core.usecases.lock.support.TestLockReposi
 import org.misterstorm.distributedlock.core.usecases.lock.support.createLock
 import org.misterstorm.distributedlock.core.usecases.lock.support.createLockCandidate
 import org.misterstorm.distributedlock.core.usecases.lock.support.createNodeState
-import org.misterstorm.distributedlock.infra.raft.models.NodeState
+import org.misterstorm.distributedlock.infra.raft.repository.NodeStateRepositoryInMemory
 import org.misterstorm.distributedlock.infra.raft.services.RaftReplicationService
 import java.time.LocalDateTime
 import kotlin.test.assertEquals
@@ -72,6 +72,7 @@ class CreateLockUseCaseTest {
             override fun publish(value: Lock) = Unit
         })
         val raftReplicationServiceMock = mockk<RaftReplicationService>()
+        every { raftReplicationServiceMock.replicate(any(), any()) } returns true
         val sut = CreateLockUseCase(
             lockRepositoryStub, failLockPublisher,
             expirationTime, createNodeState(), raftReplicationServiceMock
@@ -87,6 +88,7 @@ class CreateLockUseCaseTest {
                         )
                     },
                     { verify(exactly = 1) { failLockPublisher.publish(any()) } },
+                    { verify(exactly = 1) { raftReplicationServiceMock.replicate(eq(LockOperation.ENQUEUE), any()) } },
                 )
             },
             { _ -> fail("Expected an error to be returned, but got a lock") }
@@ -150,6 +152,8 @@ class CreateLockUseCaseTest {
                         )
                     },
                     { verify(exactly = 1) { failLockPublisher.publish(any()) } },
+                    { verify(exactly = 1) { raftReplicationServiceMock.replicate(eq(LockOperation.CREATE), any()) } },
+                    { verify(exactly = 1) { raftReplicationServiceMock.replicate(eq(LockOperation.ENQUEUE), any()) } },
                 )
             },
             { _ -> fail("Expected an error to be returned, but got a lock") }
@@ -225,9 +229,8 @@ class CreateLockUseCaseTest {
                     { assertEquals(lockInQueue.key, captor.captured.key) },
                     { assertEquals(lockInQueue.lockOwner, captor.captured.lockOwner) },
                     { assertNotEquals(lockInQueue.expirationTime, captor.captured.expirationTime) },
-                    {
-                        verify(exactly = 1) { raftReplicationServiceMock.replicate(eq(LockOperation.CREATE), any()) }
-                    }
+                    { verify(exactly = 1) { raftReplicationServiceMock.replicate(eq(LockOperation.CREATE), any()) } },
+                    { verify(exactly = 1) { raftReplicationServiceMock.replicate(eq(LockOperation.ENQUEUE), any()) } },
                 )
             },
             { _ -> fail("Expected an error to be returned, but got a lock") }
@@ -236,11 +239,12 @@ class CreateLockUseCaseTest {
 
     @Test
     fun `should return without process when node is not leader`() = runTest {
-        val nodeState = NodeState(
+        val nodeState = NodeStateRepositoryInMemory(
             nodeName = "node1",
             nodeUrl = "http://localhost:8080",
-            electionTimeout = 1000L
+            electionTimeout = 1000L,
         )
+        // intentionally left as CANDIDATE (not leader)
         val lockRepositoryStub = spyk(object : TestLockRepository() {})
         val failLockPublisher = spyk(object : Publisher<Lock> {
             override fun publish(value: Lock) = TODO("Not yet implemented")
@@ -288,10 +292,38 @@ class CreateLockUseCaseTest {
                         },
                         { verify(exactly = 1) { lockRepositoryStub.release(any()) } },
                         { verify(exactly = 1) { lockRepositoryStub.addQueue(any()) } },
+                        { verify(exactly = 0) { raftReplicationServiceMock.replicate(eq(LockOperation.ENQUEUE), any()) } },
                     )
                 },
                 { _ -> fail("Expected an error to be returned, but got a lock") }
             )
+    }
+
+    @Test
+    fun `should replicate ENQUEUE to followers when lock already exists`() = runTest {
+        val lockRepositoryStub = spyk(object : TestLockRepository() {
+            override fun getByKey(key: String): Lock = createLock()
+            override fun hasKeyInQueue(key: String): Boolean = false
+        })
+        val failLockPublisher = spyk(object : Publisher<Lock> {
+            override fun publish(value: Lock) = Unit
+        })
+        val enqueuedLocks = mutableListOf<Lock>()
+        val raftReplicationServiceMock = mockk<RaftReplicationService>()
+        every { raftReplicationServiceMock.replicate(eq(LockOperation.ENQUEUE), capture(enqueuedLocks)) } returns true
+        val sut = CreateLockUseCase(
+            lockRepositoryStub, failLockPublisher,
+            expirationTime, createNodeState(), raftReplicationServiceMock
+        )
+        val lockCandidate = createLockCandidate(clientId = "waiting-client")
+        sut.execute(lockCandidate)
+
+        assertAll(
+            { assertTrue(enqueuedLocks.size == 1, "Expected exactly one ENQUEUE replication, got ${enqueuedLocks.size}") },
+            { assertEquals(lockCandidate.key, enqueuedLocks.first().key) },
+            { assertEquals(lockCandidate.clientId, enqueuedLocks.first().lockOwner) },
+            { assertTrue(enqueuedLocks.first().expirationTime > LocalDateTime.now(), "Queue entry expiration should be in the future") },
+        )
     }
 
 }
