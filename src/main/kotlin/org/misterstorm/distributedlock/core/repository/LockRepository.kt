@@ -12,6 +12,7 @@ interface LockRepository {
     fun getAllInQueue(): Collection<Lock>
     fun addQueue(lock: Lock) : Boolean
     fun hasKeyInQueue(key: String) : Boolean
+    fun hasClientInQueue(key: String, clientId: String): Boolean
     fun dequeue(key: String) : Lock
 
     fun savePending(entry: ReplicaEntry)

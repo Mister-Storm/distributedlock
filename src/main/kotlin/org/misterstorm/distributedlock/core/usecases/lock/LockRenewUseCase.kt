@@ -18,7 +18,8 @@ import org.slf4j.MDC
 class LockRenewUseCase(
     private val lockRepository: LockRepository,
     private val nodeState: LeaderStatus,
-    private val replicationService: ReplicationService
+    private val replicationService: ReplicationService,
+    private val expirationTime: Long,
 ) : AbstractUseCase<LockCandidate, Either<BusinessError, Lock>>() {
 
     override suspend fun execute(input: LockCandidate): Either<BusinessError, Lock> =
@@ -35,13 +36,12 @@ class LockRenewUseCase(
 
         val result = lockRepository.getByKey(input.key)?.let { lock ->
             if (lock.lockOwner == input.clientId) {
-                val renewed = lock.renew()
+                val renewed = lock.renew(expirationTime)
                 lockRepository.renew(renewed)
                 val quorumResult = verifyQuorum(
                     { replicationService.replicate(LockOperation.RENEW, renewed) },
-                    lock,
-                    lockRepository::release,
-                    lockRepository::create
+                    renewed,
+                    { lockRepository.renew(lock) },
                 )
                 quorumResult
                     .onRight { log.info("Lock renewed successfully") }

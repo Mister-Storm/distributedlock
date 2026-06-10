@@ -58,10 +58,7 @@ class LockRoutes(
         MDC.put("lockKey", key)
         log.info("Get lock status request received")
         return getResourceLockStatusUseCase.execute(key).fold(
-            { error ->
-                val result = ErrorResponse.from(error)
-                ResponseEntity.status(result.httpStatus).body(result)
-            },
+            { error -> handleError(error, "/lock/$key") },
             { result -> ResponseEntity.ok(result) }
         ).also { MDC.clear() }
     }

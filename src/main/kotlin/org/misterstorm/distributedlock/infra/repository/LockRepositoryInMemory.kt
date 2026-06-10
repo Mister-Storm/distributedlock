@@ -34,8 +34,14 @@ class LockRepositoryInMemory : LockRepository {
 
     override fun getAllInQueue(): Collection<Lock> = queue
 
-    override fun addQueue(lock: Lock): Boolean = queue.add(lock)
+    override fun addQueue(lock: Lock): Boolean {
+        if (hasClientInQueue(lock.key, lock.lockOwner)) return false
+        return queue.add(lock)
+    }
+
     override fun hasKeyInQueue(key: String): Boolean = queue.any { it.key == key }
+    override fun hasClientInQueue(key: String, clientId: String): Boolean =
+        queue.any { it.key == key && it.lockOwner == clientId }
     override fun dequeue(key: String): Lock = queue.first { it.key == key }.also { queue.remove(it) }
 
     override fun savePending(entry: ReplicaEntry) {

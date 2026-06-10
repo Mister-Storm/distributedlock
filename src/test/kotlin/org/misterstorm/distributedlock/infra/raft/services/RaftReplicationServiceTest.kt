@@ -11,10 +11,11 @@ import org.misterstorm.distributedlock.core.adapter.CommitTracker
 import org.misterstorm.distributedlock.core.adapter.PeerRepository
 import org.misterstorm.distributedlock.core.models.lock.LockOperation
 import org.misterstorm.distributedlock.core.usecases.lock.support.createLock
+import org.misterstorm.distributedlock.infra.chaos.ClusterHttpClient
 import tools.jackson.databind.ObjectMapper
 import tools.jackson.module.kotlin.jsonMapper
 import tools.jackson.module.kotlin.kotlinModule
-import java.net.http.HttpClient
+import java.net.http.HttpRequest
 import java.net.http.HttpResponse
 import java.util.concurrent.CompletableFuture
 import kotlin.test.assertFalse
@@ -33,14 +34,15 @@ class RaftReplicationServiceTest {
     private fun createSut(
         peers: List<String> = emptyList(),
         commitTracker: CommitTracker = mockk(relaxed = true),
-        httpClient: HttpClient = mockk(),
-    ): Triple<RaftReplicationService, CommitTracker, HttpClient> {
-        val peerRepository = mockk<PeerRepository>()
+        clusterHttpClient: ClusterHttpClient = mockk(),
+    ): Triple<RaftReplicationService, CommitTracker, ClusterHttpClient> {
+        val peerRepository = mockk<PeerRepository>(relaxed = true)
         every { peerRepository.getPeerUrls() } returns peers
+        every { peerRepository.getReachablePeerUrls() } returns peers
         return Triple(
-            RaftReplicationService(peerRepository, commitTracker, httpClient, objectMapper),
+            RaftReplicationService(peerRepository, commitTracker, clusterHttpClient, objectMapper),
             commitTracker,
-            httpClient,
+            clusterHttpClient,
         )
     }
 
@@ -58,36 +60,36 @@ class RaftReplicationServiceTest {
 
     @Test
     fun `should return true and record commit when all peers acknowledge`() {
-        val httpClient = mockk<HttpClient>()
+        val clusterHttpClient = mockk<ClusterHttpClient>()
         val commitTracker = mockk<CommitTracker>()
         val peers = listOf("http://peer1:8081", "http://peer2:8082")
 
-        every { httpClient.send(any(), any<HttpResponse.BodyHandler<String>>()) } returns mockHttpResponse(200)
-        every { httpClient.sendAsync(any(), any<HttpResponse.BodyHandler<Void>>()) } returns CompletableFuture.completedFuture(mockk())
+        every { clusterHttpClient.send(any(), any<HttpResponse.BodyHandler<String>>()) } returns mockHttpResponse(200)
+        every { clusterHttpClient.sendAsyncDiscarding(any()) } returns CompletableFuture.completedFuture(mockk())
         justRun { commitTracker.recordCommit(any()) }
 
-        val (sut) = createSut(peers, commitTracker, httpClient)
+        val (sut) = createSut(peers, commitTracker, clusterHttpClient)
 
         val result = sut.replicate(LockOperation.CREATE, createLock())
 
         assertAll(
             { assertTrue(result) },
             { verify(exactly = 1) { commitTracker.recordCommit(any()) } },
-            { verify(exactly = peers.size) { httpClient.sendAsync(any(), any<HttpResponse.BodyHandler<Void>>()) } },
+            { verify(exactly = peers.size) { clusterHttpClient.sendAsyncDiscarding(any()) } },
         )
     }
 
     @Test
     fun `should return true with a single peer that acknowledges`() {
-        val httpClient = mockk<HttpClient>()
+        val clusterHttpClient = mockk<ClusterHttpClient>()
         val commitTracker = mockk<CommitTracker>()
         val peers = listOf("http://peer1:8081")
 
-        every { httpClient.send(any(), any<HttpResponse.BodyHandler<String>>()) } returns mockHttpResponse(200)
-        every { httpClient.sendAsync(any(), any<HttpResponse.BodyHandler<Void>>()) } returns CompletableFuture.completedFuture(mockk())
+        every { clusterHttpClient.send(any(), any<HttpResponse.BodyHandler<String>>()) } returns mockHttpResponse(200)
+        every { clusterHttpClient.sendAsyncDiscarding(any()) } returns CompletableFuture.completedFuture(mockk())
         justRun { commitTracker.recordCommit(any()) }
 
-        val (sut) = createSut(peers, commitTracker, httpClient)
+        val (sut) = createSut(peers, commitTracker, clusterHttpClient)
 
         val result = sut.replicate(LockOperation.RELEASE, createLock())
 
@@ -96,17 +98,17 @@ class RaftReplicationServiceTest {
 
     @Test
     fun `should return true when quorum is reached even if not all peers acknowledge`() {
-        val httpClient = mockk<HttpClient>()
+        val clusterHttpClient = mockk<ClusterHttpClient>()
         val commitTracker = mockk<CommitTracker>()
         val peers = listOf("http://peer1:8081", "http://peer2:8082", "http://peer3:8083")
 
-        every { httpClient.send(match { it.uri().host == "peer1" }, any<HttpResponse.BodyHandler<String>>()) } returns mockHttpResponse(200)
-        every { httpClient.send(match { it.uri().host == "peer2" }, any<HttpResponse.BodyHandler<String>>()) } returns mockHttpResponse(200)
-        every { httpClient.send(match { it.uri().host == "peer3" }, any<HttpResponse.BodyHandler<String>>()) } returns mockHttpResponse(503)
-        every { httpClient.sendAsync(any(), any<HttpResponse.BodyHandler<Void>>()) } returns CompletableFuture.completedFuture(mockk())
+        every { clusterHttpClient.send(match<HttpRequest> { it.uri().host == "peer1" }, any<HttpResponse.BodyHandler<String>>()) } returns mockHttpResponse(200)
+        every { clusterHttpClient.send(match<HttpRequest> { it.uri().host == "peer2" }, any<HttpResponse.BodyHandler<String>>()) } returns mockHttpResponse(200)
+        every { clusterHttpClient.send(match<HttpRequest> { it.uri().host == "peer3" }, any<HttpResponse.BodyHandler<String>>()) } returns mockHttpResponse(503)
+        every { clusterHttpClient.sendAsyncDiscarding(any()) } returns CompletableFuture.completedFuture(mockk())
         justRun { commitTracker.recordCommit(any()) }
 
-        val (sut) = createSut(peers, commitTracker, httpClient)
+        val (sut) = createSut(peers, commitTracker, clusterHttpClient)
 
         val result = sut.replicate(LockOperation.CREATE, createLock())
 
@@ -118,32 +120,32 @@ class RaftReplicationServiceTest {
 
     @Test
     fun `should return false when no peer acknowledges and quorum is not reached`() {
-        val httpClient = mockk<HttpClient>()
+        val clusterHttpClient = mockk<ClusterHttpClient>()
         val commitTracker = mockk<CommitTracker>()
         val peers = listOf("http://peer1:8081", "http://peer2:8082")
 
-        every { httpClient.send(any(), any<HttpResponse.BodyHandler<String>>()) } returns mockHttpResponse(503)
+        every { clusterHttpClient.send(any(), any<HttpResponse.BodyHandler<String>>()) } returns mockHttpResponse(503)
 
-        val (sut) = createSut(peers, commitTracker, httpClient)
+        val (sut) = createSut(peers, commitTracker, clusterHttpClient)
 
         val result = sut.replicate(LockOperation.CREATE, createLock())
 
         assertAll(
             { assertFalse(result) },
             { verify(exactly = 0) { commitTracker.recordCommit(any()) } },
-            { verify(exactly = 0) { httpClient.sendAsync(any(), any<HttpResponse.BodyHandler<Void>>()) } },
+            { verify(exactly = 0) { clusterHttpClient.sendAsyncDiscarding(any()) } },
         )
     }
 
     @Test
     fun `should return false when there is only one peer and it does not acknowledge`() {
-        val httpClient = mockk<HttpClient>()
+        val clusterHttpClient = mockk<ClusterHttpClient>()
         val commitTracker = mockk<CommitTracker>()
         val peers = listOf("http://peer1:8081")
 
-        every { httpClient.send(any(), any<HttpResponse.BodyHandler<String>>()) } returns mockHttpResponse(500)
+        every { clusterHttpClient.send(any(), any<HttpResponse.BodyHandler<String>>()) } returns mockHttpResponse(500)
 
-        val (sut) = createSut(peers, commitTracker, httpClient)
+        val (sut) = createSut(peers, commitTracker, clusterHttpClient)
 
         val result = sut.replicate(LockOperation.RENEW, createLock())
 
@@ -155,13 +157,13 @@ class RaftReplicationServiceTest {
 
     @Test
     fun `should count peer as nack when HTTP call throws an exception`() {
-        val httpClient = mockk<HttpClient>()
+        val clusterHttpClient = mockk<ClusterHttpClient>()
         val commitTracker = mockk<CommitTracker>()
         val peers = listOf("http://peer1:8081")
 
-        every { httpClient.send(any(), any<HttpResponse.BodyHandler<String>>()) } throws java.io.IOException("Connection refused")
+        every { clusterHttpClient.send(any(), any<HttpResponse.BodyHandler<String>>()) } throws java.io.IOException("Connection refused")
 
-        val (sut) = createSut(peers, commitTracker, httpClient)
+        val (sut) = createSut(peers, commitTracker, clusterHttpClient)
 
         val result = sut.replicate(LockOperation.CREATE, createLock())
 
@@ -173,17 +175,17 @@ class RaftReplicationServiceTest {
 
     @Test
     fun `should still reach quorum when some peers throw and others ack`() {
-        val httpClient = mockk<HttpClient>()
+        val clusterHttpClient = mockk<ClusterHttpClient>()
         val commitTracker = mockk<CommitTracker>()
         val peers = listOf("http://peer1:8081", "http://peer2:8082", "http://peer3:8083")
 
-        every { httpClient.send(match { it.uri().host == "peer1" }, any<HttpResponse.BodyHandler<String>>()) } throws java.io.IOException("timeout")
-        every { httpClient.send(match { it.uri().host == "peer2" }, any<HttpResponse.BodyHandler<String>>()) } returns mockHttpResponse(200)
-        every { httpClient.send(match { it.uri().host == "peer3" }, any<HttpResponse.BodyHandler<String>>()) } returns mockHttpResponse(200)
-        every { httpClient.sendAsync(any(), any<HttpResponse.BodyHandler<Void>>()) } returns CompletableFuture.completedFuture(mockk())
+        every { clusterHttpClient.send(match<HttpRequest> { it.uri().host == "peer1" }, any<HttpResponse.BodyHandler<String>>()) } throws java.io.IOException("timeout")
+        every { clusterHttpClient.send(match<HttpRequest> { it.uri().host == "peer2" }, any<HttpResponse.BodyHandler<String>>()) } returns mockHttpResponse(200)
+        every { clusterHttpClient.send(match<HttpRequest> { it.uri().host == "peer3" }, any<HttpResponse.BodyHandler<String>>()) } returns mockHttpResponse(200)
+        every { clusterHttpClient.sendAsyncDiscarding(any()) } returns CompletableFuture.completedFuture(mockk())
         justRun { commitTracker.recordCommit(any()) }
 
-        val (sut) = createSut(peers, commitTracker, httpClient)
+        val (sut) = createSut(peers, commitTracker, clusterHttpClient)
 
         val result = sut.replicate(LockOperation.CREATE, createLock())
 
@@ -192,16 +194,16 @@ class RaftReplicationServiceTest {
 
     @Test
     fun `should use the same idempotency key for replication and commit recording`() {
-        val httpClient = mockk<HttpClient>()
+        val clusterHttpClient = mockk<ClusterHttpClient>()
         val commitTracker = mockk<CommitTracker>()
         val peers = listOf("http://peer1:8081")
         val capturedKey = slot<String>()
 
-        every { httpClient.send(any(), any<HttpResponse.BodyHandler<String>>()) } returns mockHttpResponse(200)
-        every { httpClient.sendAsync(any(), any<HttpResponse.BodyHandler<Void>>()) } returns CompletableFuture.completedFuture(mockk())
+        every { clusterHttpClient.send(any(), any<HttpResponse.BodyHandler<String>>()) } returns mockHttpResponse(200)
+        every { clusterHttpClient.sendAsyncDiscarding(any()) } returns CompletableFuture.completedFuture(mockk())
         every { commitTracker.recordCommit(capture(capturedKey)) } returns Unit
 
-        val (sut) = createSut(peers, commitTracker, httpClient)
+        val (sut) = createSut(peers, commitTracker, clusterHttpClient)
 
         sut.replicate(LockOperation.CREATE, createLock())
 
@@ -213,29 +215,29 @@ class RaftReplicationServiceTest {
 
     @Test
     fun `should not send commit broadcasts when quorum is not reached`() {
-        val httpClient = mockk<HttpClient>()
+        val clusterHttpClient = mockk<ClusterHttpClient>()
         val commitTracker = mockk<CommitTracker>()
         val peers = listOf("http://peer1:8081", "http://peer2:8082")
 
-        every { httpClient.send(any(), any<HttpResponse.BodyHandler<String>>()) } returns mockHttpResponse(503)
+        every { clusterHttpClient.send(any(), any<HttpResponse.BodyHandler<String>>()) } returns mockHttpResponse(503)
 
-        val (sut) = createSut(peers, commitTracker, httpClient)
+        val (sut) = createSut(peers, commitTracker, clusterHttpClient)
 
         sut.replicate(LockOperation.CREATE, createLock())
 
-        verify(exactly = 0) { httpClient.sendAsync(any(), any<HttpResponse.BodyHandler<Void>>()) }
+        verify(exactly = 0) { clusterHttpClient.sendAsyncDiscarding(any()) }
     }
 
     @Test
     fun `should replicate RENEW operation successfully`() {
-        val httpClient = mockk<HttpClient>()
+        val clusterHttpClient = mockk<ClusterHttpClient>()
         val commitTracker = mockk<CommitTracker>(relaxed = true)
         val peers = listOf("http://peer1:8081")
 
-        every { httpClient.send(any(), any<HttpResponse.BodyHandler<String>>()) } returns mockHttpResponse(200)
-        every { httpClient.sendAsync(any(), any<HttpResponse.BodyHandler<Void>>()) } returns CompletableFuture.completedFuture(mockk())
+        every { clusterHttpClient.send(any(), any<HttpResponse.BodyHandler<String>>()) } returns mockHttpResponse(200)
+        every { clusterHttpClient.sendAsyncDiscarding(any()) } returns CompletableFuture.completedFuture(mockk())
 
-        val (sut) = createSut(peers, commitTracker, httpClient)
+        val (sut) = createSut(peers, commitTracker, clusterHttpClient)
 
         val result = sut.replicate(LockOperation.RENEW, createLock())
 
@@ -244,14 +246,14 @@ class RaftReplicationServiceTest {
 
     @Test
     fun `should replicate RELEASE operation successfully`() {
-        val httpClient = mockk<HttpClient>()
+        val clusterHttpClient = mockk<ClusterHttpClient>()
         val commitTracker = mockk<CommitTracker>(relaxed = true)
         val peers = listOf("http://peer1:8081")
 
-        every { httpClient.send(any(), any<HttpResponse.BodyHandler<String>>()) } returns mockHttpResponse(200)
-        every { httpClient.sendAsync(any(), any<HttpResponse.BodyHandler<Void>>()) } returns CompletableFuture.completedFuture(mockk())
+        every { clusterHttpClient.send(any(), any<HttpResponse.BodyHandler<String>>()) } returns mockHttpResponse(200)
+        every { clusterHttpClient.sendAsyncDiscarding(any()) } returns CompletableFuture.completedFuture(mockk())
 
-        val (sut) = createSut(peers, commitTracker, httpClient)
+        val (sut) = createSut(peers, commitTracker, clusterHttpClient)
 
         val result = sut.replicate(LockOperation.RELEASE, createLock())
 

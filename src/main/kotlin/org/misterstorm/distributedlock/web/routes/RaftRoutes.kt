@@ -71,9 +71,9 @@ class RaftRoutes(
 
     override fun gossip(message: GossipMessage): ResponseEntity<GossipMessage> {
         val result = runBlocking {
-            processGossipUseCase.execute(GossipData(nodes = message.nodes, deadNodes = message.deadNodes))
+            processGossipUseCase.execute(GossipData(nodes = message.nodes))
         }
-        return ResponseEntity.ok(GossipMessage(nodes = result.nodes, deadNodes = result.deadNodes))
+        return ResponseEntity.ok(GossipMessage(nodes = result.nodes))
     }
 
     override fun replicate(request: ReplicateRequest): ResponseEntity<*> {

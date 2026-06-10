@@ -6,9 +6,28 @@ distributedlock:
     name: ${NODE_NAME:node1}
     url: ${NODE_URL:http://localhost:8080}
     electionTimeout: 6000
-    gossipInterval: 3000
+    gossipInterval: ${GOSSIP_INTERVAL:3000}
   raft:
     seeds: ${RAFT_SEEDS:http://localhost:8081,http://localhost:8082}
   expirationTime: 120
+  lockCleanupInterval: 3000
+  chaos:
+    enabled: ${CHAOS_ENABLED:false}
+    inbound:
+      enabled: true
+      delayMs: ${CHAOS_INBOUND_DELAY_MS:0}
+      mode: ${CHAOS_INBOUND_MODE:NONE}
+    outbound:
+      enabled: true
+      delayMs: ${CHAOS_OUTBOUND_DELAY_MS:0}
+      mode: ${CHAOS_OUTBOUND_MODE:NONE}
 server:
   port: ${SERVER_PORT:8080}
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,prometheus,info
+  endpoint:
+    health:
+      show-details: always

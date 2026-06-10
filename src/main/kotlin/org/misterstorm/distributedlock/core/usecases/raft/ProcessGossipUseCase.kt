@@ -10,11 +10,6 @@ class ProcessGossipUseCase(
 
     override suspend fun execute(input: GossipData): GossipData {
         peerRepository.merge(input.nodes)
-        peerRepository.applyRemovals(input.deadNodes)
-        return GossipData(
-            nodes = peerRepository.getAllNodes(),
-            deadNodes = emptySet(),
-        )
+        return GossipData(nodes = peerRepository.getAllNodes())
     }
 }
-

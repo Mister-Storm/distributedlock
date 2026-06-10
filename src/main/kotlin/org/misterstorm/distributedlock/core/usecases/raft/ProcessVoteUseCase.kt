@@ -1,7 +1,6 @@
 package org.misterstorm.distributedlock.core.usecases.raft
 
 import arrow.core.Either
-import arrow.core.left
 import arrow.core.right
 import org.misterstorm.distributedlock.core.adapter.NodeStateRepository
 import org.misterstorm.distributedlock.core.adapter.PeerRepository
@@ -17,7 +16,7 @@ class ProcessVoteUseCase(
 ) : AbstractUseCase<VoteInput, Either<BusinessError, VoteOutput>>() {
 
     override suspend fun execute(input: VoteInput): Either<BusinessError, VoteOutput> {
-        val state = nodeStateRepository.getState()
+        var state = nodeStateRepository.getState()
         val currentTerm = state.term
 
         MDC.put("candidate", input.candidateName)
@@ -28,6 +27,17 @@ class ProcessVoteUseCase(
             log.warn("Vote denied: candidate term is stale")
             MDC.remove("candidate"); MDC.remove("requestTerm"); MDC.remove("currentTerm")
             return VoteOutput(currentTerm, false).right()
+        }
+
+        if (input.term > currentTerm) {
+            state = state.asFollower(input.term, state.leaderName, state.leaderUrl)
+            nodeStateRepository.saveState(state)
+        }
+
+        if (state.isLeader() && input.term <= state.term) {
+            log.warn("Vote denied: node is already leader")
+            MDC.remove("candidate"); MDC.remove("requestTerm"); MDC.remove("currentTerm")
+            return VoteOutput(state.term, false).right()
         }
 
         val alreadyVoted = state.votedFor
@@ -41,10 +51,8 @@ class ProcessVoteUseCase(
             VoteOutput(input.term, true).right()
         } else {
             log.info("Vote denied: already voted in this term")
-            nodeStateRepository.saveState(state.withoutVote())
             MDC.remove("candidate"); MDC.remove("requestTerm"); MDC.remove("currentTerm")
-            VoteOutput(currentTerm, false).right()
+            VoteOutput(state.term, false).right()
         }
     }
 }
-

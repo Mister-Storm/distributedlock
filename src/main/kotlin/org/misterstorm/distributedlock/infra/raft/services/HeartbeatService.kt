@@ -2,6 +2,7 @@ package org.misterstorm.distributedlock.infra.raft.services
 
 import org.misterstorm.distributedlock.core.adapter.CommitTracker
 import org.misterstorm.distributedlock.core.adapter.PeerRepository
+import org.misterstorm.distributedlock.infra.chaos.ClusterHttpClient
 import org.misterstorm.distributedlock.infra.raft.repository.NodeStateRepositoryInMemory
 import org.misterstorm.distributedlock.infra.raft.requests.HeartbeatRequest
 import org.slf4j.Logger
@@ -11,28 +12,19 @@ import org.springframework.scheduling.annotation.Scheduled
 import org.springframework.stereotype.Service
 import tools.jackson.databind.ObjectMapper
 import java.net.URI
-import java.net.http.HttpClient
 import java.net.http.HttpRequest
 import java.net.http.HttpResponse
 import java.time.Duration
-import java.util.concurrent.ConcurrentHashMap
 
 @Service
 class HeartbeatService(
     private val nodeStateRepository: NodeStateRepositoryInMemory,
-    private val httpClient: HttpClient,
+    private val clusterHttpClient: ClusterHttpClient,
     private val objectMapper: ObjectMapper,
     private val peerRepository: PeerRepository,
     private val commitTracker: CommitTracker,
 ) {
     val log: Logger = LoggerFactory.getLogger(javaClass)
-
-    companion object {
-        private const val MAX_FAILURES = 3
-    }
-
-    private val failureCount = ConcurrentHashMap<String, Int>()
-
 
     @Scheduled(fixedRate = 1000)
     fun sendHeartbeat() {
@@ -61,22 +53,19 @@ class HeartbeatService(
                 .timeout(Duration.ofSeconds(2))
                 .build()
 
-            httpClient.sendAsync(request, HttpResponse.BodyHandlers.discarding()).exceptionally {
-                val failures = failureCount.merge(peer, 1, Int::plus) ?: 1
-                MDC.put("peer", peer)
-                MDC.put("failures", failures.toString())
-                MDC.put("maxFailures", MAX_FAILURES.toString())
-                if (failures >= MAX_FAILURES) {
-                    peerRepository.remove(peer)
-                    failureCount.remove(peer)
-                    log.warn("Peer removed after consecutive heartbeat failures")
-                } else {
-                    log.warn("Heartbeat to peer failed")
+            clusterHttpClient.sendAsync(request, HttpResponse.BodyHandlers.ofString())
+                .whenComplete { response, error ->
+                    MDC.put("peer", peer)
+                    if (error != null || response?.statusCode() != 200) {
+                        peerRepository.markUnreachable(peer)
+                        MDC.put("error", error?.message ?: "status=${response?.statusCode()}")
+                        log.warn("Heartbeat to peer failed")
+                        MDC.remove("error")
+                    } else {
+                        peerRepository.markReachable(peer)
+                    }
+                    MDC.remove("peer")
                 }
-                MDC.remove("peer"); MDC.remove("failures"); MDC.remove("maxFailures")
-                null
-            }
-            failureCount.remove(peer)
         }
     }
 }

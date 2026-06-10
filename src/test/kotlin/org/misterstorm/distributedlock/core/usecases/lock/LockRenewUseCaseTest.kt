@@ -34,7 +34,7 @@ class LockRenewUseCaseTest {
         val raftReplicationService = mockk<RaftReplicationService>()
         every { raftReplicationService.replicate(eq(LockOperation.RENEW), any()) } returns true
         val nodeState = createNodeState()
-        val sut = LockRenewUseCase(lockRepository, nodeState, raftReplicationService)
+        val sut = LockRenewUseCase(lockRepository, nodeState, raftReplicationService, 120L)
         sut.execute(lockCandidate).fold(
             { error -> fail("Expected lock to be renewed successfully, but got error: $error") },
             { lock ->
@@ -56,7 +56,7 @@ class LockRenewUseCaseTest {
         })
         val raftReplicationService = mockk<RaftReplicationService>()
         val nodeState = createNodeState()
-        val sut = LockRenewUseCase(lockRepository, nodeState, raftReplicationService)
+        val sut = LockRenewUseCase(lockRepository, nodeState, raftReplicationService, 120L)
         sut.execute(lockCandidate).fold(
             { error ->
                 assertAll(
@@ -77,7 +77,7 @@ class LockRenewUseCaseTest {
         })
         val raftReplicationService = mockk<RaftReplicationService>()
         val nodeState = createNodeState()
-        val sut = LockRenewUseCase(lockRepository, nodeState, raftReplicationService)
+        val sut = LockRenewUseCase(lockRepository, nodeState, raftReplicationService, 120L)
         sut.execute(lockCandidate).fold(
             { error ->
                 assertAll(
@@ -97,7 +97,7 @@ class LockRenewUseCaseTest {
         val raftReplicationService = mockk<RaftReplicationService>()
         val nodeState = createNodeState()
         nodeState.becomeCandidate()
-        val sut = LockRenewUseCase(lockRepository, nodeState, raftReplicationService)
+        val sut = LockRenewUseCase(lockRepository, nodeState, raftReplicationService, 120L)
         sut.execute(lockCandidate).fold(
             { error ->
                 assertAll(
@@ -117,21 +117,17 @@ class LockRenewUseCaseTest {
         val lockRepository = spyk(object : TestLockRepository(){
             override fun getByKey(key: String) = originalLock
             override fun renew(lock: Lock): Lock = lock
-            override fun release(lock: Lock): Boolean = true
-            override fun create(lock: Lock): Lock = lock
         })
         val raftReplicationService = mockk<RaftReplicationService>()
         every { raftReplicationService.replicate(eq(LockOperation.RENEW), any()) } returns false
         val nodeState = createNodeState()
-        val sut = LockRenewUseCase(lockRepository, nodeState, raftReplicationService)
+        val sut = LockRenewUseCase(lockRepository, nodeState, raftReplicationService, 120L)
         sut.execute(lockCandidate).fold(
             { error ->
                 assertAll(
                     { assertTrue(error is BusinessError.QuorumNotReached) },
                     { verify(exactly = 1) { lockRepository.getByKey(lockCandidate.key) } },
-                    { verify(exactly = 1) { lockRepository.renew(any()) } },
-                    { verify(exactly = 1) { lockRepository.release(any()) } },
-                    { verify(exactly = 1) { lockRepository.create(originalLock) } }
+                    { verify(exactly = 2) { lockRepository.renew(any()) } },
                 )
             },
             { _ -> fail("Expected error but got Lock") }

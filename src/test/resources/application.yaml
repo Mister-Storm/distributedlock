@@ -1,0 +1,25 @@
+spring:
+  task:
+    scheduling:
+      enabled: false
+
+distributedlock:
+  node:
+    name: ${NODE_NAME:node1}
+    url: ${NODE_URL:http://localhost:8080}
+    electionTimeout: 6000
+    gossipInterval: 3000
+  raft:
+    seeds: []
+  expirationTime: 120
+  lockCleanupInterval: 3000
+  chaos:
+    enabled: false
+    inbound:
+      enabled: true
+      delayMs: 0
+      mode: NONE
+    outbound:
+      enabled: true
+      delayMs: 0
+      mode: NONE

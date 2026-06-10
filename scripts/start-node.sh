@@ -43,10 +43,19 @@ echo "🚀  Iniciando $NODE_NAME na porta $PORT..."
 echo "    Seeds: $SEEDS"
 echo "    Log:   $LOG_DIR/$NODE_NAME.log"
 
+# Exemplos de chaos (opcional):
+#   CHAOS_ENABLED=true CHAOS_OUTBOUND_MODE=ALTERNATING_ODD_PORTS ./scripts/start-node.sh node1 8081 "..."
+#   CHAOS_ENABLED=true CHAOS_INBOUND_DELAY_MS=3000 ./scripts/start-node.sh node2 8082 "..."
+
 NODE_NAME="$NODE_NAME" \
 NODE_URL="http://localhost:$PORT" \
 SERVER_PORT="$PORT" \
 RAFT_SEEDS="$SEEDS" \
+CHAOS_ENABLED="${CHAOS_ENABLED:-false}" \
+CHAOS_INBOUND_DELAY_MS="${CHAOS_INBOUND_DELAY_MS:-0}" \
+CHAOS_INBOUND_MODE="${CHAOS_INBOUND_MODE:-NONE}" \
+CHAOS_OUTBOUND_DELAY_MS="${CHAOS_OUTBOUND_DELAY_MS:-0}" \
+CHAOS_OUTBOUND_MODE="${CHAOS_OUTBOUND_MODE:-NONE}" \
   java -jar "$JAR" \
   >> "$LOG_DIR/$NODE_NAME.stdout.log" 2>&1 &
 

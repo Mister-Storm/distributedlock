@@ -10,6 +10,7 @@ class GetNodeStatusUseCase(
     private val nodeStateRepository: NodeStateRepository,
     private val peerRepository: PeerRepository,
     private val lockRepository: LockRepository,
+    private val chaosSnapshot: () -> Map<String, Any> = { emptyMap() },
 ) : AbstractUseCase<Unit, NodeStatusOutput>() {
 
     override suspend fun execute(input: Unit): NodeStatusOutput {
@@ -22,9 +23,11 @@ class GetNodeStatusUseCase(
             leader = state.leaderName,
             leaderUrl = state.leaderUrl,
             peers = peerRepository.getPeerUrls(),
+            peerDetails = peerRepository.getPeerEntries(),
             knownNodes = peerRepository.getAllNodes(),
             locks = lockRepository.getAllLocks(),
             locksInQueue = lockRepository.getAllInQueue(),
+            chaos = chaosSnapshot(),
         )
     }
 }
