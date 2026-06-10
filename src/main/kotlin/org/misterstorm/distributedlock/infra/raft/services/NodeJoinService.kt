@@ -10,7 +10,7 @@ import org.springframework.boot.ApplicationRunner
 import org.springframework.stereotype.Component
 import tools.jackson.databind.ObjectMapper
 import java.net.URI
-import java.net.http.HttpClient
+import org.misterstorm.distributedlock.infra.chaos.ClusterHttpClient
 import java.net.http.HttpRequest
 import java.net.http.HttpResponse
 import java.time.Duration
@@ -20,7 +20,7 @@ class NodeJoinService(
     private val peerRepository: PeerRepository,
     private val nodeState: NodeStateRepositoryInMemory,
     private val electionService: ElectionService,
-    private val httpClient: HttpClient,
+    private val clusterHttpClient: ClusterHttpClient,
     private val objectMapper: ObjectMapper,
     private val lockRepository: LockRepository,
 ) : ApplicationRunner {
@@ -51,11 +51,12 @@ class NodeJoinService(
                     .timeout(Duration.ofSeconds(3))
                     .build()
 
-                val response = httpClient.send(request, HttpResponse.BodyHandlers.ofString())
+                val response = clusterHttpClient.send(request, HttpResponse.BodyHandlers.ofString())
                 MDC.put("seed", seed)
                 if (response.statusCode() == 200) {
                     val gossip = objectMapper.readValue(response.body(), GossipMessage::class.java)
                     peerRepository.merge(gossip.nodes)
+                    peerRepository.markReachable(seed)
                     MDC.put("discoveredNodes", gossip.nodes.size.toString())
                     logger.info("Joined cluster via seed")
                     MDC.remove("discoveredNodes")
@@ -100,9 +101,10 @@ class NodeJoinService(
                     .GET()
                     .timeout(Duration.ofSeconds(2))
                     .build()
-                val response = httpClient.send(request, HttpResponse.BodyHandlers.ofString())
+                val response = clusterHttpClient.send(request, HttpResponse.BodyHandlers.ofString())
                 MDC.put("peer", peer)
                 if (response.statusCode() == 200) {
+                    peerRepository.markReachable(peer)
                     @Suppress("UNCHECKED_CAST")
                     val status = objectMapper.readValue(response.body(), Map::class.java) as Map<String, Any?>
                     val leaderId = status["leader"] as? String
@@ -142,7 +144,7 @@ class NodeJoinService(
                 .GET()
                 .timeout(Duration.ofSeconds(5))
                 .build()
-            val response = httpClient.send(request, HttpResponse.BodyHandlers.ofString())
+            val response = clusterHttpClient.send(request, HttpResponse.BodyHandlers.ofString())
             if (response.statusCode() == 200) {
                 val snapshot = objectMapper.readValue(response.body(), SnapshotResponse::class.java)
                 lockRepository.loadSnapshot(snapshot.locks, snapshot.queue)

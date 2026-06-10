@@ -49,7 +49,6 @@ class RaftRoutesIntegrationTest {
         (lockRepository as LockRepositoryInMemory).clear()
         nodeState.becomeFollower(0L, null, null)
         peerRepository.getPeerUrls().forEach { peerRepository.remove(it) }
-        peerRepository.clearPendingRemovals()
     }
 
     @AfterEach
@@ -198,6 +197,7 @@ class RaftRoutesIntegrationTest {
 
     @Test
     fun `should deny vote when node already voted for different candidate`() {
+        nodeState.becomeFollower(1L, null, null)
         nodeState.voteFor("candidate-B")
 
         mvc.http(objectMapper)

@@ -20,7 +20,6 @@ data class HeartbeatInput(
 
 data class GossipData(
     val nodes: Map<String, String>,
-    val deadNodes: Set<String> = emptySet(),
 )
 
 data class JoinInput(
@@ -39,9 +38,11 @@ data class NodeStatusOutput(
     val leader: String?,
     val leaderUrl: String?,
     val peers: List<String>,
+    val peerDetails: List<PeerEntry>,
     val knownNodes: Map<String, String>,
     val locks: Collection<Any>,
     val locksInQueue: Collection<Any>,
+    val chaos: Map<String, Any> = emptyMap(),
 )
 
 data class SnapshotData(

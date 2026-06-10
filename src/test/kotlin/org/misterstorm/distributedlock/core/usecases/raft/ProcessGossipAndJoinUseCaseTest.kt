@@ -20,21 +20,11 @@ class ProcessGossipUseCaseTest {
         every { peerRepo.getAllNodes() } returns mapOf("node1" to "http://node1:8080", "node2" to "http://node2:8081")
         val sut = ProcessGossipUseCase(peerRepo)
 
-        val result = sut.execute(GossipData(nodes = mapOf("node2" to "http://node2:8081"), deadNodes = emptySet()))
+        val result = sut.execute(GossipData(nodes = mapOf("node2" to "http://node2:8081")))
         assertAll(
             { verify(exactly = 1) { peerRepo.merge(mapOf("node2" to "http://node2:8081")) } },
             { assertTrue(result.nodes.containsKey("node1")) },
         )
-    }
-
-    @Test
-    fun `should apply dead nodes removals`() = runTest {
-        val peerRepo = mockk<PeerRepository>(relaxed = true)
-        every { peerRepo.getAllNodes() } returns emptyMap()
-        val sut = ProcessGossipUseCase(peerRepo)
-
-        sut.execute(GossipData(nodes = emptyMap(), deadNodes = setOf("http://dead:9090")))
-        verify(exactly = 1) { peerRepo.applyRemovals(setOf("http://dead:9090")) }
     }
 
     @Test

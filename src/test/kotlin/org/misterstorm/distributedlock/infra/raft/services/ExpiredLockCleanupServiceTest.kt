@@ -37,7 +37,7 @@ class ExpiredLockCleanupServiceTest {
         val nodeState = createFollowerNodeState()
         val raftReplicationService = mockk<RaftReplicationService>()
 
-        val sut = ExpiredLockCleanupService(lockRepository, nodeState, raftReplicationService)
+        val sut = ExpiredLockCleanupService(lockRepository, nodeState, raftReplicationService, 120L)
         sut.cleanupExpiredLocks()
 
         assertAll(
@@ -55,7 +55,7 @@ class ExpiredLockCleanupServiceTest {
         val nodeState = createNodeState()
         val raftReplicationService = mockk<RaftReplicationService>()
 
-        val sut = ExpiredLockCleanupService(lockRepository, nodeState, raftReplicationService)
+        val sut = ExpiredLockCleanupService(lockRepository, nodeState, raftReplicationService, 120L)
         sut.cleanupExpiredLocks()
 
         assertAll(
@@ -65,20 +65,22 @@ class ExpiredLockCleanupServiceTest {
     }
 
     @Test
-    fun `should replicate RELEASE for expired lock with no queued candidate`() {
+    fun `should release locally and replicate RELEASE for expired lock with no queued candidate`() {
         val expiredLock = createExpiredLock()
         val lockRepository = spyk(object : TestLockRepository() {
             override fun getAllLocks(): Collection<Lock> = listOf(expiredLock)
+            override fun release(lock: Lock): Boolean = true
             override fun hasKeyInQueue(key: String): Boolean = false
         })
         val nodeState = createNodeState()
         val raftReplicationService = mockk<RaftReplicationService>()
         every { raftReplicationService.replicate(LockOperation.RELEASE, expiredLock) } returns true
 
-        val sut = ExpiredLockCleanupService(lockRepository, nodeState, raftReplicationService)
+        val sut = ExpiredLockCleanupService(lockRepository, nodeState, raftReplicationService, 120L)
         sut.cleanupExpiredLocks()
 
         assertAll(
+            { verify(exactly = 1) { lockRepository.release(expiredLock) } },
             { verify(exactly = 1) { raftReplicationService.replicate(LockOperation.RELEASE, expiredLock) } },
             { verify(exactly = 0) { raftReplicationService.replicate(LockOperation.CREATE, any()) } },
             { verify(exactly = 0) { lockRepository.dequeue(any()) } },
@@ -86,26 +88,30 @@ class ExpiredLockCleanupServiceTest {
     }
 
     @Test
-    fun `should replicate RELEASE and then CREATE when there is a queued candidate`() {
+    fun `should release locally replicate RELEASE and then CREATE when there is a queued candidate`() {
         val expiredLock = createExpiredLock()
         val promotedLock = createLock()
         val lockRepository = spyk(object : TestLockRepository() {
             override fun getAllLocks(): Collection<Lock> = listOf(expiredLock)
+            override fun release(lock: Lock): Boolean = true
             override fun hasKeyInQueue(key: String): Boolean = true
             override fun dequeue(key: String): Lock = promotedLock
+            override fun create(lock: Lock): Lock = lock
         })
         val nodeState = createNodeState()
         val raftReplicationService = mockk<RaftReplicationService>()
         every { raftReplicationService.replicate(LockOperation.RELEASE, expiredLock) } returns true
-        every { raftReplicationService.replicate(LockOperation.CREATE, promotedLock) } returns true
+        every { raftReplicationService.replicate(LockOperation.CREATE, any()) } returns true
 
-        val sut = ExpiredLockCleanupService(lockRepository, nodeState, raftReplicationService)
+        val sut = ExpiredLockCleanupService(lockRepository, nodeState, raftReplicationService, 120L)
         sut.cleanupExpiredLocks()
 
         assertAll(
+            { verify(exactly = 1) { lockRepository.release(expiredLock) } },
             { verify(exactly = 1) { raftReplicationService.replicate(LockOperation.RELEASE, expiredLock) } },
             { verify(exactly = 1) { lockRepository.dequeue(expiredLock.key) } },
-            { verify(exactly = 1) { raftReplicationService.replicate(LockOperation.CREATE, promotedLock) } },
+            { verify(exactly = 1) { lockRepository.create(any()) } },
+            { verify(exactly = 1) { raftReplicationService.replicate(LockOperation.CREATE, any()) } },
         )
     }
 
@@ -114,16 +120,20 @@ class ExpiredLockCleanupServiceTest {
         val expiredLock = createExpiredLock()
         val lockRepository = spyk(object : TestLockRepository() {
             override fun getAllLocks(): Collection<Lock> = listOf(expiredLock)
+            override fun release(lock: Lock): Boolean = true
+            override fun create(lock: Lock): Lock = lock
         })
         val nodeState = createNodeState()
         val raftReplicationService = mockk<RaftReplicationService>()
         every { raftReplicationService.replicate(LockOperation.RELEASE, expiredLock) } returns false
 
-        val sut = ExpiredLockCleanupService(lockRepository, nodeState, raftReplicationService)
+        val sut = ExpiredLockCleanupService(lockRepository, nodeState, raftReplicationService, 120L)
         sut.cleanupExpiredLocks()
 
         assertAll(
+            { verify(exactly = 1) { lockRepository.release(expiredLock) } },
             { verify(exactly = 1) { raftReplicationService.replicate(LockOperation.RELEASE, expiredLock) } },
+            { verify(exactly = 1) { lockRepository.create(expiredLock) } },
             { verify(exactly = 0) { lockRepository.hasKeyInQueue(any()) } },
             { verify(exactly = 0) { lockRepository.dequeue(any()) } },
             { verify(exactly = 0) { raftReplicationService.replicate(LockOperation.CREATE, any()) } },
@@ -136,21 +146,23 @@ class ExpiredLockCleanupServiceTest {
         val promotedLock = createLock()
         val lockRepository = spyk(object : TestLockRepository() {
             override fun getAllLocks(): Collection<Lock> = listOf(expiredLock)
+            override fun release(lock: Lock): Boolean = true
             override fun hasKeyInQueue(key: String): Boolean = true
             override fun dequeue(key: String): Lock = promotedLock
+            override fun create(lock: Lock): Lock = lock
             override fun addQueue(lock: Lock): Boolean = true
         })
         val nodeState = createNodeState()
         val raftReplicationService = mockk<RaftReplicationService>()
         every { raftReplicationService.replicate(LockOperation.RELEASE, expiredLock) } returns true
-        every { raftReplicationService.replicate(LockOperation.CREATE, promotedLock) } returns false
+        every { raftReplicationService.replicate(LockOperation.CREATE, any()) } returns false
 
-        val sut = ExpiredLockCleanupService(lockRepository, nodeState, raftReplicationService)
+        val sut = ExpiredLockCleanupService(lockRepository, nodeState, raftReplicationService, 120L)
         sut.cleanupExpiredLocks()
 
         assertAll(
             { verify(exactly = 1) { raftReplicationService.replicate(LockOperation.RELEASE, expiredLock) } },
-            { verify(exactly = 1) { raftReplicationService.replicate(LockOperation.CREATE, promotedLock) } },
+            { verify(exactly = 1) { raftReplicationService.replicate(LockOperation.CREATE, any()) } },
             { verify(exactly = 1) { lockRepository.addQueue(promotedLock) } },
         )
     }
@@ -161,13 +173,14 @@ class ExpiredLockCleanupServiceTest {
         val expiredLock2 = createExpiredLock("key_2")
         val lockRepository = spyk(object : TestLockRepository() {
             override fun getAllLocks(): Collection<Lock> = listOf(expiredLock1, expiredLock2)
+            override fun release(lock: Lock): Boolean = true
             override fun hasKeyInQueue(key: String): Boolean = false
         })
         val nodeState = createNodeState()
         val raftReplicationService = mockk<RaftReplicationService>()
         every { raftReplicationService.replicate(LockOperation.RELEASE, any()) } returns true
 
-        val sut = ExpiredLockCleanupService(lockRepository, nodeState, raftReplicationService)
+        val sut = ExpiredLockCleanupService(lockRepository, nodeState, raftReplicationService, 120L)
         sut.cleanupExpiredLocks()
 
         assertAll(
@@ -176,4 +189,3 @@ class ExpiredLockCleanupServiceTest {
         )
     }
 }
-

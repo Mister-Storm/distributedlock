@@ -301,10 +301,9 @@ Para descoberta de nós e propagação de exclusões, o sistema usa gossip peri�
 ```
 [GossipService] @Scheduled(fixedRate = gossipInterval)
   │
-  └─ POST /raft/gossip {nodes: Map<name,url>, deadNodes: Set<url>}
+  └─ POST /raft/gossip {nodes: Map<name,url>}
           [ProcessGossipUseCase]:
            nodeRegistry.merge(nodes)
-           nodeRegistry.applyRemovals(deadNodes)
            retorna estado local atualizado
 ```
 
@@ -697,6 +696,33 @@ docker compose -f docker-compose.observability.yml up -d
 sudo ./scripts/network-partition.sh block 8082    # isola porta 8082
 sudo ./scripts/network-partition.sh unblock 8082  # restaura
 ```
+
+### Simulação de falhas de rede (Chaos Engineering)
+
+Sem `sudo`, é possível simular latência e falhas alternadas via variáveis de ambiente:
+
+```bash
+# Falha alternada ao comunicar com peers de porta ímpar (8081, 8083)
+CHAOS_ENABLED=true CHAOS_OUTBOUND_MODE=ALTERNATING_ODD_PORTS \
+  ./scripts/start-node.sh node1 8081 "http://localhost:8082,http://localhost:8083"
+
+# Nó lento (3s de delay nas respostas /raft e /lock)
+CHAOS_ENABLED=true CHAOS_INBOUND_DELAY_MS=3000 \
+  ./scripts/start-node.sh node2 8082 "http://localhost:8081,http://localhost:8083"
+```
+
+| Variável | Valores | Efeito |
+|---|---|---|
+| `CHAOS_ENABLED` | `true`/`false` | Ativa o módulo |
+| `CHAOS_OUTBOUND_MODE` | `NONE`, `ALTERNATING_ODD_PORTS`, `ALWAYS_FAIL_ODD_PORTS` | Falhas nas chamadas HTTP entre nós |
+| `CHAOS_INBOUND_MODE` | `NONE`, `ALTERNATING_ODD_PORTS` | Falhas nas respostas deste nó |
+| `CHAOS_*_DELAY_MS` | milissegundos | `Thread.sleep` antes de enviar/responder |
+
+Logs com `chaosApplied=true` aparecem no Grafana. O estado do chaos também é exposto em `GET /raft/status` no campo `chaos`.
+
+### Peers persistentes
+
+Falhas temporárias de rede **não removem** peers do cluster. O status muda para `UNREACHABLE` e volta a `REACHABLE` automaticamente quando heartbeats/status respondem novamente. Veja `peerDetails` em `GET /raft/status`.
 
 ---
 

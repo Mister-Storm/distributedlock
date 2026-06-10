@@ -1,6 +1,6 @@
 package org.misterstorm.distributedlock.web.routes.spec
 
-import org.misterstorm.distributedlock.core.models.lock.Lock
+import jakarta.validation.Valid
 import org.misterstorm.distributedlock.core.models.lock.LockCandidate
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.DeleteMapping
@@ -15,13 +15,13 @@ import org.springframework.web.bind.annotation.RequestMapping
 interface LockRoutesSpec {
 
     @PostMapping
-    suspend fun lock(@RequestBody lock: LockCandidate): ResponseEntity<*>
+    suspend fun lock(@Valid @RequestBody lock: LockCandidate): ResponseEntity<*>
 
     @DeleteMapping
-    suspend fun unlock(@RequestBody lock: LockCandidate) : ResponseEntity<*>
+    suspend fun unlock(@Valid @RequestBody lock: LockCandidate): ResponseEntity<*>
 
     @PutMapping()
-    suspend fun renew(@RequestBody lock: LockCandidate): ResponseEntity<*>
+    suspend fun renew(@Valid @RequestBody lock: LockCandidate): ResponseEntity<*>
 
     @GetMapping("/{key}")
     suspend fun getLock(@PathVariable key: String): ResponseEntity<*>

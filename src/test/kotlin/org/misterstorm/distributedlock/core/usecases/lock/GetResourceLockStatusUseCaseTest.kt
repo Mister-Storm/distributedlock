@@ -13,6 +13,7 @@ import org.misterstorm.distributedlock.core.models.responses.LockStatus
 import org.misterstorm.distributedlock.core.models.responses.LockStatusResponse
 import org.misterstorm.distributedlock.core.usecases.lock.support.TestLockRepository
 import org.misterstorm.distributedlock.core.usecases.lock.support.createLock
+import org.misterstorm.distributedlock.core.usecases.lock.support.createNodeState
 import java.time.LocalDateTime
 import kotlin.test.fail
 
@@ -25,7 +26,7 @@ class GetResourceLockStatusUseCaseTest {
             val lockRepository = spyk(object : TestLockRepository(){
                 override fun getByKey(key: String): Lock = createLock()
             })
-            val sut = GetResourceLockStatusUseCase(lockRepository)
+            val sut = GetResourceLockStatusUseCase(lockRepository, createNodeState())
             sut.execute(key).fold(
                 {error -> fail("Expected to return LockStatusResponse Locked but got error: $error")},
                 {result ->
@@ -48,7 +49,7 @@ class GetResourceLockStatusUseCaseTest {
                 override fun getByKey(key: String): Lock =
                     createLock(expirationTime = LocalDateTime.now().minusSeconds(12))
             })
-            val sut = GetResourceLockStatusUseCase(lockRepository)
+            val sut = GetResourceLockStatusUseCase(lockRepository, createNodeState())
             sut.execute(key).fold(
                 { error -> fail("Expected to return LockStatusResponse Locked but got error: $error") },
                 { result ->
@@ -67,7 +68,7 @@ class GetResourceLockStatusUseCaseTest {
                 val lockRepository = spyk(object : TestLockRepository(){
                     override fun getByKey(key: String): Lock? = null
                 })
-                val sut = GetResourceLockStatusUseCase(lockRepository)
+                val sut = GetResourceLockStatusUseCase(lockRepository, createNodeState())
                 sut.execute("key").fold(
                     {error -> assertTrue(error is BusinessError.LockNotFound) },
                     {_ -> fail("Expected to return LockNotFound but got LockStatusResponse") }

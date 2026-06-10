@@ -41,7 +41,6 @@ class NodeJoinServiceIntegrationTest {
         (lockRepository as LockRepositoryInMemory).clear()
         nodeState.becomeFollower(0L, null, null)
         peerRepository.getPeerUrls().forEach { peerRepository.remove(it) }
-        peerRepository.clearPendingRemovals()
     }
 
     @AfterEach
@@ -49,7 +48,6 @@ class NodeJoinServiceIntegrationTest {
         mockServer?.stop()
         mockServer = null
         peerRepository.getPeerUrls().forEach { peerRepository.remove(it) }
-        peerRepository.clearPendingRemovals()
     }
 
     @Test

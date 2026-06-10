@@ -13,6 +13,7 @@ open class TestLockRepository : LockRepository {
     override fun getAllInQueue(): Collection<Lock> = TODO("Not yet implemented")
     override fun addQueue(lock: Lock): Boolean = TODO("Not yet implemented")
     override fun hasKeyInQueue(key: String): Boolean = TODO("Not yet implemented")
+    override fun hasClientInQueue(key: String, clientId: String): Boolean = TODO("Not yet implemented")
     override fun dequeue(key: String): Lock = TODO("Not yet implemented")
     override fun savePending(entry: ReplicaEntry): Unit = TODO("Not yet implemented")
     override fun commit(idempotencyKey: String): Unit = TODO("Not yet implemented")

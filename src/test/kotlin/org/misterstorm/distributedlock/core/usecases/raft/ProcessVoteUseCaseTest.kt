@@ -48,7 +48,7 @@ class ProcessVoteUseCaseTest {
 
     @Test
     fun `should deny vote when already voted for different candidate`() = runTest {
-        val (sut, _, _) = createSut(buildNodeInfo(votedFor = "nodeB"))
+        val (sut, _, _) = createSut(buildNodeInfo(term = 1L, votedFor = "nodeB"))
         val result = sut.execute(VoteInput("nodeA", "http://nodeA:8080", 1L))
         assertFalse(result.getOrNull()!!.voteGranted)
     }

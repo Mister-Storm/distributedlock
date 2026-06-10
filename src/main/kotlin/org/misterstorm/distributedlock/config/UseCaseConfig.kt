@@ -20,6 +20,7 @@ import org.misterstorm.distributedlock.core.usecases.raft.ProcessJoinUseCase
 import org.misterstorm.distributedlock.core.usecases.raft.ProcessVoteUseCase
 import org.misterstorm.distributedlock.core.usecases.raft.StartElectionUseCase
 import org.misterstorm.distributedlock.infra.assync.publisher.FailLockPublisher
+import org.misterstorm.distributedlock.infra.chaos.ChaosEngine
 import org.misterstorm.distributedlock.infra.raft.services.RaftReplicationService
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.context.annotation.Bean
@@ -38,8 +39,11 @@ class UseCaseConfig {
     ): CreateLockUseCase = CreateLockUseCase(lockRepository, failLockPublisher, expirationTime, nodeStateRepository, raftReplicationService)
 
     @Bean
-    fun getResourceLockStatusUseCase(lockRepository: LockRepository): GetResourceLockStatusUseCase =
-        GetResourceLockStatusUseCase(lockRepository)
+    fun getResourceLockStatusUseCase(
+        lockRepository: LockRepository,
+        nodeStateRepository: NodeStateRepository,
+    ): GetResourceLockStatusUseCase =
+        GetResourceLockStatusUseCase(lockRepository, nodeStateRepository)
 
     @Bean
     fun lockReleaseUseCase(
@@ -54,7 +58,8 @@ class UseCaseConfig {
         lockRepository: LockRepository,
         nodeStateRepository: NodeStateRepository,
         raftReplicationService: RaftReplicationService,
-    ): LockRenewUseCase = LockRenewUseCase(lockRepository, nodeStateRepository, raftReplicationService)
+        @Value("\${distributedlock.expirationTime}") expirationTime: Long,
+    ): LockRenewUseCase = LockRenewUseCase(lockRepository, nodeStateRepository, raftReplicationService, expirationTime)
 
     @Bean
     fun processHeartbeatUseCase(
@@ -100,7 +105,13 @@ class UseCaseConfig {
         nodeStateRepository: NodeStateRepository,
         peerRepository: PeerRepository,
         lockRepository: LockRepository,
-    ): GetNodeStatusUseCase = GetNodeStatusUseCase(nodeStateRepository, peerRepository, lockRepository)
+        chaosEngine: ChaosEngine,
+    ): GetNodeStatusUseCase = GetNodeStatusUseCase(
+        nodeStateRepository,
+        peerRepository,
+        lockRepository,
+        chaosSnapshot = chaosEngine::snapshot,
+    )
 
     @Bean
     fun getSnapshotUseCase(

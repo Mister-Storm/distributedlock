@@ -7,14 +7,14 @@ import org.slf4j.LoggerFactory
 import org.slf4j.MDC
 import org.springframework.stereotype.Component
 import tools.jackson.databind.ObjectMapper
+import org.misterstorm.distributedlock.infra.chaos.ClusterHttpClient
 import java.net.URI
-import java.net.http.HttpClient
 import java.net.http.HttpRequest
 import java.net.http.HttpResponse
 
 @Component
 class HttpVoteRequester(
-    private val httpClient: HttpClient,
+    private val clusterHttpClient: ClusterHttpClient,
     private val objectMapper: ObjectMapper,
 ) : VoteRequester {
 
@@ -28,7 +28,7 @@ class HttpVoteRequester(
                 .header("Content-Type", "application/json")
                 .POST(HttpRequest.BodyPublishers.ofString(body))
                 .build()
-            val response = httpClient.send(request, HttpResponse.BodyHandlers.ofString())
+            val response = clusterHttpClient.send(request, HttpResponse.BodyHandlers.ofString())
             objectMapper.readValue(response.body(), VoteOutput::class.java)
         }.getOrElse { ex ->
             MDC.put("peer", peerUrl); MDC.put("error", ex.message)

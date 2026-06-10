@@ -152,7 +152,7 @@ class CreateLockUseCaseTest {
                         )
                     },
                     { verify(exactly = 1) { failLockPublisher.publish(any()) } },
-                    { verify(exactly = 1) { raftReplicationServiceMock.replicate(eq(LockOperation.CREATE), any()) } },
+                    { verify(exactly = 0) { raftReplicationServiceMock.replicate(eq(LockOperation.CREATE), any()) } },
                     { verify(exactly = 1) { raftReplicationServiceMock.replicate(eq(LockOperation.ENQUEUE), any()) } },
                 )
             },
@@ -185,7 +185,7 @@ class CreateLockUseCaseTest {
                             "Expected a BusinessError, but got: $error"
                         )
                     },
-                    { verify(exactly = 1) { failLockPublisher.publish(any()) } },
+                    { verify(exactly = 0) { failLockPublisher.publish(any()) } },
                 )
             },
             { _ -> fail("Expected an error to be returned, but got a lock") }
@@ -210,30 +210,26 @@ class CreateLockUseCaseTest {
             lockRepositoryStub, failLockPublisher,
             expirationTime, createNodeState(), raftReplicationServiceMock
         )
-        val lockCandidate = createLockCandidate()
+        val lockCandidate = createLockCandidate(clientId = "queuedClientId")
         val captor = slot<Lock>()
         sut.execute(lockCandidate).fold(
-            { error ->
+            { error -> fail("Expected lock to be granted from queue, but got error: $error") },
+            { lock ->
                 assertAll(
-                    {
-                        assertTrue(
-                            error is BusinessError.LockAlreadyExists,
-                            "Expected a BusinessError, but got: $error"
-                        )
-                    },
                     { verify(exactly = 1) { lockRepositoryStub.getByKey(lockCandidate.key) } },
                     { verify(exactly = 1) { lockRepositoryStub.hasKeyInQueue(lockCandidate.key) } },
                     { verify(exactly = 1) { lockRepositoryStub.dequeue(lockCandidate.key) } },
                     { verify(exactly = 1) { lockRepositoryStub.create(capture(captor)) } },
-                    { verify(exactly = 1) { failLockPublisher.publish(any()) } },
+                    { verify(exactly = 0) { failLockPublisher.publish(any()) } },
+                    { assertEquals(lockInQueue.key, lock.key) },
+                    { assertEquals(lockInQueue.lockOwner, lock.lockOwner) },
                     { assertEquals(lockInQueue.key, captor.captured.key) },
                     { assertEquals(lockInQueue.lockOwner, captor.captured.lockOwner) },
                     { assertNotEquals(lockInQueue.expirationTime, captor.captured.expirationTime) },
                     { verify(exactly = 1) { raftReplicationServiceMock.replicate(eq(LockOperation.CREATE), any()) } },
-                    { verify(exactly = 1) { raftReplicationServiceMock.replicate(eq(LockOperation.ENQUEUE), any()) } },
+                    { verify(exactly = 0) { raftReplicationServiceMock.replicate(eq(LockOperation.ENQUEUE), any()) } },
                 )
             },
-            { _ -> fail("Expected an error to be returned, but got a lock") }
         )
     }
 

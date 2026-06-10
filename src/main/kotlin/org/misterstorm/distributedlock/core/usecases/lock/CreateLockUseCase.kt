@@ -62,8 +62,8 @@ class CreateLockUseCase(
                 if (!enqueued) {
                     log.warn("ENQUEUE replication failed: queue entry will only exist on this node until next snapshot sync")
                 }
+                failLockPublisher.publish(queuedLock)
             }
-            failLockPublisher.publish(queuedLock)
         }
 
         MDC.remove("clientId")
@@ -71,38 +71,45 @@ class CreateLockUseCase(
         return result
     }
 
-    private fun Raise<BusinessError>.getLock(input: LockCandidate): Lock = runCatching {
+    private fun Raise<BusinessError>.getLock(input: LockCandidate): Lock {
         if (lockRepository.hasKeyInQueue(input.key)) {
-            val existentLock = lockRepository.dequeue(input.key).copy(
+            val promoted = lockRepository.dequeue(input.key).copy(
                 expirationTime = LocalDateTime.now().plusSeconds(expirationTime)
             )
-            lockRepository.create(existentLock)
-            throw LockAlreadyExistsException(existentLock)
-        }
-        lockRepository.create(
-            Lock(
-                input.key, input.clientId,
-                LocalDateTime.now().plusSeconds(expirationTime),
-            )
-        )
-    }.fold(
-        onSuccess = { it },
-        onFailure = { error ->
-            if (error is LockAlreadyExistsException) {
+            lockRepository.create(promoted)
+            if (promoted.lockOwner != input.clientId) {
                 verifyQuorum(
-                    { replicationService.replicate(LockOperation.CREATE, error.existentLock) },
-                    error.existentLock,
-                    lockRepository::release, lockRepository::addQueue
+                    { replicationService.replicate(LockOperation.CREATE, promoted) },
+                    promoted,
+                    lockRepository::release,
+                    lockRepository::addQueue,
                 ).fold(
                     { err -> raise(err) },
-                    { it }
+                    { it },
                 )
                 raise(BusinessError.LockAlreadyExists(input.key))
             }
-            log.error("Unexpected error during lock creation")
-            raise(BusinessError.UnexpectedException())
+            return promoted
         }
-    )
+
+        return runCatching {
+            lockRepository.create(
+                Lock(
+                    input.key, input.clientId,
+                    LocalDateTime.now().plusSeconds(expirationTime),
+                )
+            )
+        }.fold(
+            onSuccess = { it },
+            onFailure = { error ->
+                if (error is LockAlreadyExistsException) {
+                    raise(BusinessError.LockAlreadyExists(input.key))
+                }
+                log.error("Unexpected error during lock creation")
+                raise(BusinessError.UnexpectedException())
+            }
+        )
+    }
 
     private fun Raise<BusinessError>.verifyExistentLock(input: LockCandidate) {
         lockRepository.getByKey(input.key)?.let { lock ->
