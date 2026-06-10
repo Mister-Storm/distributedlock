@@ -75,10 +75,11 @@ class NodeJoinService(
             }
         }
 
-        if (foundAnyPeer && nodeState.getState().leaderName == null) {
+        if (foundAnyPeer) {
+            if (nodeState.isLeader()) {
+                nodeState.becomeFollower(nodeState.getState().term, null, null)
+            }
             discoverLeader()
-        } else if (foundAnyPeer) {
-            nodeState.getState().leaderUrl?.let { syncStateFromLeader(it) }
         }
 
         if (!foundAnyPeer) {
@@ -93,8 +94,9 @@ class NodeJoinService(
     }
 
     private fun discoverLeader() {
-        peerRepository.getPeerUrls().forEach { peer ->
-            if (nodeState.getState().leaderName != null) return
+        if (nodeState.getState().leaderName != null) return
+
+        for (peer in peerRepository.getPeerUrls()) {
             runCatching {
                 val request = HttpRequest.newBuilder()
                     .uri(URI.create("$peer/raft/status"))
@@ -119,7 +121,7 @@ class NodeJoinService(
                         MDC.remove("leader"); MDC.remove("leaderUrl"); MDC.remove("term")
                         MDC.remove("peer")
                         syncStateFromLeader(leaderUrl)
-                        return@forEach
+                        return
                     }
                 } else {
                     MDC.put("statusCode", response.statusCode().toString())

@@ -5,6 +5,7 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.misterstorm.distributedlock.core.models.Role
@@ -40,8 +41,12 @@ class NodeJoinServiceIntegrationTest {
     fun setup() {
         (lockRepository as LockRepositoryInMemory).clear()
         nodeState.becomeFollower(0L, null, null)
+        assertEquals(Role.FOLLOWER, nodeState.getState().role)
+        assertNull(nodeState.getState().leaderName)
         peerRepository.getPeerUrls().forEach { peerRepository.remove(it) }
     }
+
+    private fun mockLeaderUrl(port: Int): String = "http://127.0.0.1:$port"
 
     @AfterEach
     fun tearDown() {
@@ -53,7 +58,7 @@ class NodeJoinServiceIntegrationTest {
     @Test
     fun `should sync locks from leader when joining cluster with active state`() {
         val server = ClientAndServer.startClientAndServer().also { mockServer = it }
-        val leaderUrl = "http://localhost:${server.port}"
+        val leaderUrl = mockLeaderUrl(server.port)
 
         val activeLock = lock(key = "join-lock-1", lockOwner = "owner-1")
         val gossipBody = objectMapper.writeValueAsString(GossipMessage(mapOf("mock-leader" to leaderUrl)))
@@ -84,9 +89,13 @@ class NodeJoinServiceIntegrationTest {
     @Test
     fun `should sync queue from leader when leader has queued locks`() {
         val server = ClientAndServer.startClientAndServer().also { mockServer = it }
-        val leaderUrl = "http://localhost:${server.port}"
+        val leaderUrl = mockLeaderUrl(server.port)
 
-        val queuedLock = lock(key = "join-queued-res", lockOwner = "waiting-owner")
+        val queuedLock = lock(
+            key = "join-queued-res",
+            lockOwner = "waiting-owner",
+            expirationTime = LocalDateTime.now().plusYears(1),
+        )
         val gossipBody = objectMapper.writeValueAsString(GossipMessage(mapOf("mock-leader" to leaderUrl)))
         val statusBody = objectMapper.writeValueAsString(
             mapOf("leader" to "mock-leader", "leaderUrl" to leaderUrl, "term" to 1)
@@ -106,14 +115,20 @@ class NodeJoinServiceIntegrationTest {
             .respond(response().withStatusCode(200).withContentType(MediaType.APPLICATION_JSON).withBody(snapshotBody))
 
         peerRepository.merge(mapOf("mock-leader" to leaderUrl))
-        nodeJoinService.run(DefaultApplicationArguments(*arrayOf<String>()))
+        nodeJoinService.run(DefaultApplicationArguments())
 
-        assertTrue(lockRepository.hasKeyInQueue("join-queued-res"))
+        assertFalse(lockRepository.getAllLocks().isEmpty() && lockRepository.getAllInQueue().isEmpty()) {
+            "Expected state synced from leader snapshot: locks=${lockRepository.getAllLocks()}, queue=${lockRepository.getAllInQueue()}"
+        }
+        assertTrue(lockRepository.hasKeyInQueue("join-queued-res")) {
+            "Queue should contain synced lock: ${lockRepository.getAllInQueue()}"
+        }
+        assertEquals("waiting-owner", lockRepository.getAllInQueue().first().lockOwner)
     }
 
     @Test
     fun `should become leader when no peers respond during join`() {
-        nodeJoinService.run(DefaultApplicationArguments(*arrayOf<String>()))
+        nodeJoinService.run(DefaultApplicationArguments())
 
         assertEquals(Role.LEADER, nodeState.getState().role)
     }
@@ -121,7 +136,7 @@ class NodeJoinServiceIntegrationTest {
     @Test
     fun `should not load expired locks when snapshot contains expired entries`() {
         val server = ClientAndServer.startClientAndServer().also { mockServer = it }
-        val leaderUrl = "http://localhost:${server.port}"
+        val leaderUrl = mockLeaderUrl(server.port)
 
         val activeLock = lock(key = "join-active", lockOwner = "owner-active")
         val expiredLock = lock(
@@ -157,7 +172,7 @@ class NodeJoinServiceIntegrationTest {
     @Test
     fun `should not crash and keep empty state when snapshot endpoint returns 403`() {
         val server = ClientAndServer.startClientAndServer().also { mockServer = it }
-        val leaderUrl = "http://localhost:${server.port}"
+        val leaderUrl = mockLeaderUrl(server.port)
 
         val gossipBody = objectMapper.writeValueAsString(GossipMessage(mapOf("mock-leader" to leaderUrl)))
         val statusBody = objectMapper.writeValueAsString(
@@ -183,7 +198,7 @@ class NodeJoinServiceIntegrationTest {
     @Test
     fun `should become follower with correct term when leader is discovered during join`() {
         val server = ClientAndServer.startClientAndServer().also { mockServer = it }
-        val leaderUrl = "http://localhost:${server.port}"
+        val leaderUrl = mockLeaderUrl(server.port)
 
         val gossipBody = objectMapper.writeValueAsString(GossipMessage(mapOf("mock-leader" to leaderUrl)))
         val statusBody = objectMapper.writeValueAsString(
