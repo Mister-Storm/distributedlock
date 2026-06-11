@@ -70,14 +70,18 @@ class LockReleaseUseCase(
         val promoted = candidate.copy(expirationTime = LocalDateTime.now().plusSeconds(expirationTime))
         lockRepository.create(promoted)
         MDC.put("promotedOwner", promoted.lockOwner)
+        MDC.put("event", "lock_promoted")
+        MDC.put("operation", LockOperation.PROMOTE.name)
         log.info("Promoting queued lock after explicit release")
-        val created = replicationService.replicate(LockOperation.CREATE, promoted)
-        if (!created) {
+        val replicated = replicationService.replicate(LockOperation.PROMOTE, promoted)
+        if (!replicated) {
             log.warn("Quorum not reached while promoting queued lock, re-enqueuing")
             lockRepository.release(promoted)
             lockRepository.addQueue(candidate)
             replicationService.replicate(LockOperation.ENQUEUE, candidate)
         }
         MDC.remove("promotedOwner")
+        MDC.remove("event")
+        MDC.remove("operation")
     }
 }

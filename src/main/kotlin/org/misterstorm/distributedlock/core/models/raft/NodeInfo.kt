@@ -28,6 +28,13 @@ data class NodeInfo(
         lastHeartbeatAt = Instant.now(),
     )
 
+    fun asFollowerAfterFailedElection(): NodeInfo = copy(
+        role = Role.FOLLOWER,
+        leaderName = null,
+        leaderUrl = null,
+        lastHeartbeatAt = Instant.now(),
+    )
+
     fun asCandidate(): NodeInfo = copy(
         role = Role.CANDIDATE,
         term = term + 1,
@@ -41,4 +48,3 @@ data class NodeInfo(
     fun withoutVote(): NodeInfo = copy(votedFor = null)
     fun isLeader(): Boolean = role == Role.LEADER
 }
-

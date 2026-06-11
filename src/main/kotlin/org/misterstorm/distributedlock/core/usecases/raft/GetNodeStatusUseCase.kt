@@ -4,6 +4,7 @@ import org.misterstorm.distributedlock.core.adapter.NodeStateRepository
 import org.misterstorm.distributedlock.core.adapter.PeerRepository
 import org.misterstorm.distributedlock.core.models.raft.NodeStatusOutput
 import org.misterstorm.distributedlock.core.repository.LockRepository
+import org.misterstorm.distributedlock.core.support.ClusterHealth
 import org.misterstorm.distributedlock.core.usecases.AbstractUseCase
 
 class GetNodeStatusUseCase(
@@ -22,7 +23,10 @@ class GetNodeStatusUseCase(
             term = state.term,
             leader = state.leaderName,
             leaderUrl = state.leaderUrl,
-            peers = peerRepository.getPeerUrls(),
+            peers = peerRepository.getRegisteredPeerUrls(),
+            healthyPeers = peerRepository.getHealthyPeerUrls(),
+            unhealthyPeers = peerRepository.getUnhealthyPeerUrls(),
+            healthyClusterSize = ClusterHealth.healthyClusterSize(peerRepository),
             peerDetails = peerRepository.getPeerEntries(),
             knownNodes = peerRepository.getAllNodes(),
             locks = lockRepository.getAllLocks(),
@@ -31,4 +35,3 @@ class GetNodeStatusUseCase(
         )
     }
 }
-

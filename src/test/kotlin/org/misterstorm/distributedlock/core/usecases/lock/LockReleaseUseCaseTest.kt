@@ -149,9 +149,9 @@ class LockReleaseUseCaseTest {
                     { verify(exactly = 1) { lockRepository.hasKeyInQueue(lock.key) } },
                     { verify(exactly = 1) { lockRepository.dequeue(lock.key) } },
                     { verify(exactly = 1) { lockRepository.create(capture(promotedSlot)) } },
-                    // RELEASE for the original lock + CREATE for the promoted candidate
+                    // RELEASE for the original lock + PROMOTE for the promoted candidate
                     { verify(exactly = 1) { raftReplicationService.replicate(eq(LockOperation.RELEASE), any()) } },
-                    { verify(exactly = 1) { raftReplicationService.replicate(eq(LockOperation.CREATE), any()) } },
+                    { verify(exactly = 1) { raftReplicationService.replicate(eq(LockOperation.PROMOTE), any()) } },
                     // promoted lock keeps same owner but gets a fresh expiration
                     { assertEquals(queuedLock.lockOwner, promotedSlot.captured.lockOwner) },
                     { assertTrue(promotedSlot.captured.expirationTime > LocalDateTime.now()) },
@@ -161,7 +161,7 @@ class LockReleaseUseCaseTest {
     }
 
     @Test
-    fun `should re-enqueue candidate with ENQUEUE replication when promotion CREATE quorum fails`() = runTest {
+    fun `should re-enqueue candidate with ENQUEUE replication when promotion PROMOTE quorum fails`() = runTest {
         val queuedLock = createLock(lockOwner = "waiting-client")
         val lockRepository = spyk(object : TestLockRepository() {
             override fun getByKey(key: String): Lock = createLock()
@@ -173,9 +173,9 @@ class LockReleaseUseCaseTest {
         })
         val nodeState = createNodeState()
         val raftReplicationService = mockk<RaftReplicationService>()
-        // RELEASE succeeds, CREATE for promoted candidate fails
+        // RELEASE succeeds, PROMOTE for promoted candidate fails
         every { raftReplicationService.replicate(eq(LockOperation.RELEASE), any()) } returns true
-        every { raftReplicationService.replicate(eq(LockOperation.CREATE), any()) } returns false
+        every { raftReplicationService.replicate(eq(LockOperation.PROMOTE), any()) } returns false
         every { raftReplicationService.replicate(eq(LockOperation.ENQUEUE), any()) } returns true
         val sut = LockReleaseUseCase(lockRepository, nodeState, raftReplicationService, expirationTime)
 

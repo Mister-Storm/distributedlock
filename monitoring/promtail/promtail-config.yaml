@@ -66,6 +66,15 @@ scrape_configs:
             error_type:     errorType
             peer:           peer
             idempotency_key: idempotencyKey
+            event:          event
+            peer_status:    peerStatus
+            chaos_applied:  chaosApplied
+            chaos_mode:     chaosMode
+            chaos_action:   chaosAction
+            chaos_direction: chaosDirection
+            healthy_peers:  healthyPeers
+            unhealthy_peers: unhealthyPeers
+            healthy_cluster_size: healthyClusterSize
 
       # 3. Promote selected fields to Loki stream labels (low cardinality only)
       - labels:
@@ -73,6 +82,7 @@ scrape_configs:
           service:
           raft_node:
           operation:
+          event:
 
       # 4. Store high-cardinality fields as structured metadata (queryable, not indexed)
       - structured_metadata:
@@ -83,6 +93,14 @@ scrape_configs:
           peer:
           idempotency_key:
           error_type:
+          peer_status:
+          chaos_applied:
+          chaos_mode:
+          chaos_action:
+          chaos_direction:
+          healthy_peers:
+          unhealthy_peers:
+          healthy_cluster_size:
           logger:
           thread:
 

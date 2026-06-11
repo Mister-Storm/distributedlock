@@ -226,7 +226,7 @@ class CreateLockUseCaseTest {
                     { assertEquals(lockInQueue.key, captor.captured.key) },
                     { assertEquals(lockInQueue.lockOwner, captor.captured.lockOwner) },
                     { assertNotEquals(lockInQueue.expirationTime, captor.captured.expirationTime) },
-                    { verify(exactly = 1) { raftReplicationServiceMock.replicate(eq(LockOperation.CREATE), any()) } },
+                    { verify(exactly = 1) { raftReplicationServiceMock.replicate(eq(LockOperation.PROMOTE), any()) } },
                     { verify(exactly = 0) { raftReplicationServiceMock.replicate(eq(LockOperation.ENQUEUE), any()) } },
                 )
             },

@@ -14,9 +14,9 @@ class ClusterHttpClient(
 ) {
     fun <T> send(request: HttpRequest, responseBodyHandler: HttpResponse.BodyHandler<T>): HttpResponse<T> {
         val url = request.uri().toString()
-        chaosEngine.applyOutboundDelay(url)
-        if (chaosEngine.shouldFailOutbound(url)) {
-            throw IOException("chaos: simulated outbound failure for $url")
+        chaosEngine.applyOutboundDelay()
+        if (chaosEngine.isOutboundOffline()) {
+            throw IOException("chaos: node temporarily offline (outbound raft traffic to $url)")
         }
         return httpClient.send(request, responseBodyHandler)
     }
@@ -27,9 +27,11 @@ class ClusterHttpClient(
     ): CompletableFuture<HttpResponse<String>> {
         val url = request.uri().toString()
         return try {
-            chaosEngine.applyOutboundDelay(url)
-            if (chaosEngine.shouldFailOutbound(url)) {
-                CompletableFuture.failedFuture(IOException("chaos: simulated outbound failure for $url"))
+            chaosEngine.applyOutboundDelay()
+            if (chaosEngine.isOutboundOffline()) {
+                CompletableFuture.failedFuture(
+                    IOException("chaos: node temporarily offline (outbound raft traffic to $url)")
+                )
             } else {
                 httpClient.sendAsync(request, responseBodyHandler)
             }
@@ -42,9 +44,11 @@ class ClusterHttpClient(
     fun sendAsyncDiscarding(request: HttpRequest): CompletableFuture<HttpResponse<Void>> {
         val url = request.uri().toString()
         return try {
-            chaosEngine.applyOutboundDelay(url)
-            if (chaosEngine.shouldFailOutbound(url)) {
-                CompletableFuture.failedFuture(IOException("chaos: simulated outbound failure for $url"))
+            chaosEngine.applyOutboundDelay()
+            if (chaosEngine.isOutboundOffline()) {
+                CompletableFuture.failedFuture(
+                    IOException("chaos: node temporarily offline (outbound raft traffic to $url)")
+                )
             } else {
                 httpClient.sendAsync(request, HttpResponse.BodyHandlers.discarding())
             }

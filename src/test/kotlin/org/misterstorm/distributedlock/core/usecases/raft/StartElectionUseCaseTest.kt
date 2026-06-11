@@ -2,7 +2,6 @@ package org.misterstorm.distributedlock.core.usecases.raft
 
 import io.mockk.every
 import io.mockk.mockk
-import io.mockk.slot
 import io.mockk.verify
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Test
@@ -25,8 +24,17 @@ class StartElectionUseCaseTest {
         term: Long = 0L,
     ) = NodeInfo(name = name, url = url, role = role, term = term)
 
+    private fun mockPeerRepository(
+        peerRepository: PeerRepository,
+        healthyPeers: List<String>,
+    ) {
+        every { peerRepository.getHealthyPeerUrls() } returns healthyPeers
+        every { peerRepository.getRegisteredPeerUrls() } returns healthyPeers
+        every { peerRepository.getUnhealthyPeerUrls() } returns emptyList()
+    }
+
     private fun createSut(
-        peers: List<String> = emptyList(),
+        healthyPeers: List<String> = emptyList(),
         voteGranted: Boolean = true,
     ): Triple<StartElectionUseCase, NodeStateRepository, PeerRepository> {
         val nodeStateRepository = mockk<NodeStateRepository>(relaxed = true)
@@ -34,7 +42,7 @@ class StartElectionUseCaseTest {
         val voteRequester = mockk<VoteRequester>()
 
         every { nodeStateRepository.getState() } returns buildNodeInfo()
-        every { peerRepository.getPeerUrls() } returns peers
+        mockPeerRepository(peerRepository, healthyPeers)
         every { voteRequester.requestVote(any(), any()) } returns VoteOutput(1L, voteGranted)
 
         val sut = StartElectionUseCase(nodeStateRepository, peerRepository, voteRequester)
@@ -43,37 +51,45 @@ class StartElectionUseCaseTest {
 
     @Test
     fun `should become leader when quorum is reached with single node`() = runTest {
-        val (sut, nodeStateRepo, _) = createSut(peers = emptyList())
+        val (sut, nodeStateRepo, _) = createSut(healthyPeers = emptyList())
         val result = sut.execute(Unit)
         assertAll(
             { assertTrue(result.isRight()) },
             { assertTrue(result.getOrNull()!!.becameLeader) },
-            // saveState called twice: once for candidate, once for leader
             { verify(atLeast = 2) { nodeStateRepo.saveState(any()) } },
         )
     }
 
     @Test
-    fun `should become leader when all peers grant vote`() = runTest {
-        val (sut, _, _) = createSut(peers = listOf("http://node2:8081", "http://node3:8082"), voteGranted = true)
+    fun `should become leader when all healthy peers grant vote`() = runTest {
+        val (sut, _, _) = createSut(
+            healthyPeers = listOf("http://node2:8081", "http://node3:8082"),
+            voteGranted = true,
+        )
         val result = sut.execute(Unit)
         assertTrue(result.getOrNull()!!.becameLeader)
     }
 
     @Test
-    fun `should not become leader when no peer grants vote in 3-node cluster`() = runTest {
-        val (sut, _, _) = createSut(peers = listOf("http://node2:8081", "http://node3:8082"), voteGranted = false)
+    fun `should not become leader when no healthy peer grants vote in 3-node cluster`() = runTest {
+        val (sut, nodeStateRepo, _) = createSut(
+            healthyPeers = listOf("http://node2:8081", "http://node3:8082"),
+            voteGranted = false,
+        )
         val result = sut.execute(Unit)
-        assertFalse(result.getOrNull()!!.becameLeader)
+        assertAll(
+            { assertFalse(result.getOrNull()!!.becameLeader) },
+            { verify { nodeStateRepo.saveState(match { it.role == Role.FOLLOWER }) } },
+        )
     }
 
     @Test
-    fun `should become leader when majority grants vote in 3-node cluster`() = runTest {
+    fun `should become leader when majority of healthy peers grant vote`() = runTest {
         val nodeStateRepository = mockk<NodeStateRepository>(relaxed = true)
         val peerRepository = mockk<PeerRepository>()
         val voteRequester = mockk<VoteRequester>()
         every { nodeStateRepository.getState() } returns buildNodeInfo()
-        every { peerRepository.getPeerUrls() } returns listOf("http://node2:8081", "http://node3:8082")
+        mockPeerRepository(peerRepository, listOf("http://node2:8081", "http://node3:8082"))
         every { voteRequester.requestVote("http://node2:8081", any()) } returns VoteOutput(1L, true)
         every { voteRequester.requestVote("http://node3:8082", any()) } returns VoteOutput(1L, false)
 
@@ -83,18 +99,19 @@ class StartElectionUseCaseTest {
     }
 
     @Test
-    fun `should treat unreachable peer as no vote`() = runTest {
+    fun `should become leader when registered peers are unhealthy leaving solo healthy cluster`() = runTest {
         val nodeStateRepository = mockk<NodeStateRepository>(relaxed = true)
         val peerRepository = mockk<PeerRepository>()
         val voteRequester = mockk<VoteRequester>()
         every { nodeStateRepository.getState() } returns buildNodeInfo()
-        every { peerRepository.getPeerUrls() } returns listOf("http://node2:8081")
-        every { voteRequester.requestVote(any(), any()) } returns null
+        every { peerRepository.getRegisteredPeerUrls() } returns listOf("http://node2:8081")
+        every { peerRepository.getHealthyPeerUrls() } returns emptyList()
+        every { peerRepository.getUnhealthyPeerUrls() } returns listOf("http://node2:8081")
 
         val sut = StartElectionUseCase(nodeStateRepository, peerRepository, voteRequester)
         val result = sut.execute(Unit)
-        // 1 vote (self only) out of 2 nodes — quorum is 2 — should NOT win
-        assertFalse(result.getOrNull()!!.becameLeader)
+        assertTrue(result.getOrNull()!!.becameLeader)
+        verify(exactly = 0) { voteRequester.requestVote(any(), any()) }
     }
 
     @Test
@@ -105,14 +122,12 @@ class StartElectionUseCaseTest {
         val savedStates = mutableListOf<NodeInfo>()
 
         every { nodeStateRepository.getState() } returns buildNodeInfo()
-        every { peerRepository.getPeerUrls() } returns emptyList()
+        mockPeerRepository(peerRepository, emptyList())
         every { nodeStateRepository.saveState(capture(savedStates)) } returns Unit
 
         val sut = StartElectionUseCase(nodeStateRepository, peerRepository, voteRequester)
         sut.execute(Unit)
 
-        // First save must be the candidate state
         assertTrue(savedStates.first().role == Role.CANDIDATE)
     }
 }
-

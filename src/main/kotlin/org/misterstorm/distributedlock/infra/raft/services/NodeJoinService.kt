@@ -29,7 +29,7 @@ class NodeJoinService(
 
     override fun run(args: ApplicationArguments) {
         MDC.put("node", nodeState.getState().name)
-        val seeds = peerRepository.getPeerUrls()
+        val seeds = peerRepository.getRegisteredPeerUrls()
 
         if (seeds.isEmpty()) {
             logger.info("No seeds configured, starting election immediately")
@@ -56,7 +56,7 @@ class NodeJoinService(
                 if (response.statusCode() == 200) {
                     val gossip = objectMapper.readValue(response.body(), GossipMessage::class.java)
                     peerRepository.merge(gossip.nodes)
-                    peerRepository.markReachable(seed)
+                    peerRepository.markHealthy(seed)
                     MDC.put("discoveredNodes", gossip.nodes.size.toString())
                     logger.info("Joined cluster via seed")
                     MDC.remove("discoveredNodes")
@@ -96,7 +96,7 @@ class NodeJoinService(
     private fun discoverLeader() {
         if (nodeState.getState().leaderName != null) return
 
-        for (peer in peerRepository.getPeerUrls()) {
+        for (peer in peerRepository.getRegisteredPeerUrls()) {
             runCatching {
                 val request = HttpRequest.newBuilder()
                     .uri(URI.create("$peer/raft/status"))
@@ -106,7 +106,7 @@ class NodeJoinService(
                 val response = clusterHttpClient.send(request, HttpResponse.BodyHandlers.ofString())
                 MDC.put("peer", peer)
                 if (response.statusCode() == 200) {
-                    peerRepository.markReachable(peer)
+                    peerRepository.markHealthy(peer)
                     @Suppress("UNCHECKED_CAST")
                     val status = objectMapper.readValue(response.body(), Map::class.java) as Map<String, Any?>
                     val leaderId = status["leader"] as? String

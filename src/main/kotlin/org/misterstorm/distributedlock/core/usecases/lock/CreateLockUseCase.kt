@@ -73,20 +73,21 @@ class CreateLockUseCase(
 
     private fun Raise<BusinessError>.getLock(input: LockCandidate): Lock {
         if (lockRepository.hasKeyInQueue(input.key)) {
-            val promoted = lockRepository.dequeue(input.key).copy(
-                expirationTime = LocalDateTime.now().plusSeconds(expirationTime)
+            val candidate = lockRepository.dequeue(input.key)
+            val promoted = candidate.copy(
+                expirationTime = LocalDateTime.now().plusSeconds(expirationTime),
             )
             lockRepository.create(promoted)
+            verifyQuorum(
+                { replicationService.replicate(LockOperation.PROMOTE, promoted) },
+                promoted,
+                lockRepository::release,
+                { lockRepository.addQueue(candidate) },
+            ).fold(
+                { err -> raise(err) },
+                { },
+            )
             if (promoted.lockOwner != input.clientId) {
-                verifyQuorum(
-                    { replicationService.replicate(LockOperation.CREATE, promoted) },
-                    promoted,
-                    lockRepository::release,
-                    lockRepository::addQueue,
-                ).fold(
-                    { err -> raise(err) },
-                    { it },
-                )
                 raise(BusinessError.LockAlreadyExists(input.key))
             }
             return promoted

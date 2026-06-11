@@ -33,7 +33,7 @@ class HeartbeatService(
         val state = nodeStateRepository.getState()
         MDC.put("node", state.name)
         MDC.put("term", state.term.toString())
-        MDC.put("peers", peerRepository.getPeerUrls().size.toString())
+        MDC.put("peers", peerRepository.getRegisteredPeerUrls().size.toString())
         log.info("Sending heartbeat")
         MDC.remove("node"); MDC.remove("term"); MDC.remove("peers")
 
@@ -45,7 +45,7 @@ class HeartbeatService(
         )
         val body = objectMapper.writeValueAsString(heartbeat)
 
-        peerRepository.getPeerUrls().forEach { peer ->
+        peerRepository.getRegisteredPeerUrls().forEach { peer ->
             val request = HttpRequest.newBuilder()
                 .uri(URI.create("$peer/raft/heartbeat"))
                 .header("Content-Type", "application/json")
@@ -57,12 +57,12 @@ class HeartbeatService(
                 .whenComplete { response, error ->
                     MDC.put("peer", peer)
                     if (error != null || response?.statusCode() != 200) {
-                        peerRepository.markUnreachable(peer)
+                        peerRepository.markUnhealthy(peer)
                         MDC.put("error", error?.message ?: "status=${response?.statusCode()}")
                         log.warn("Heartbeat to peer failed")
                         MDC.remove("error")
                     } else {
-                        peerRepository.markReachable(peer)
+                        peerRepository.markHealthy(peer)
                     }
                     MDC.remove("peer")
                 }

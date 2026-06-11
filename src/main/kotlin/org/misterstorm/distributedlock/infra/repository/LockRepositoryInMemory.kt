@@ -58,6 +58,13 @@ class LockRepositoryInMemory : LockRepository {
             LockOperation.RELEASE -> store.remove(entry.lock.key)
             LockOperation.RENEW -> store.replace(entry.lock.key, entry.lock)
             LockOperation.ENQUEUE -> if (!hasKeyInQueue(entry.lock.key)) queue.add(entry.lock)
+            LockOperation.PROMOTE -> {
+                queue.removeIf { it.key == entry.lock.key }
+                store.compute(entry.lock.key) { _, existing ->
+                    if (existing != null && !existing.isExpired()) existing
+                    else entry.lock
+                }
+            }
         }
     }
 
