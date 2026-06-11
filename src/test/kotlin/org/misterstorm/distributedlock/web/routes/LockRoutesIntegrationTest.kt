@@ -28,7 +28,7 @@ class LockRoutesIntegrationTest {
     fun setup() {
         (lockRepository as LockRepositoryInMemory).clear()
         nodeState.becomeLeader()
-        peerRepository.getPeerUrls().forEach { peerRepository.remove(it) }
+        peerRepository.getRegisteredPeerUrls().forEach { peerRepository.remove(it) }
     }
 
     @Test

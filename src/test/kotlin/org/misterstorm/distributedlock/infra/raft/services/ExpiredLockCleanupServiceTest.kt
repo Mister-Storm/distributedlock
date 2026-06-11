@@ -82,13 +82,13 @@ class ExpiredLockCleanupServiceTest {
         assertAll(
             { verify(exactly = 1) { lockRepository.release(expiredLock) } },
             { verify(exactly = 1) { raftReplicationService.replicate(LockOperation.RELEASE, expiredLock) } },
-            { verify(exactly = 0) { raftReplicationService.replicate(LockOperation.CREATE, any()) } },
+            { verify(exactly = 0) { raftReplicationService.replicate(LockOperation.PROMOTE, any()) } },
             { verify(exactly = 0) { lockRepository.dequeue(any()) } },
         )
     }
 
     @Test
-    fun `should release locally replicate RELEASE and then CREATE when there is a queued candidate`() {
+    fun `should release locally replicate RELEASE and then PROMOTE when there is a queued candidate`() {
         val expiredLock = createExpiredLock()
         val promotedLock = createLock()
         val lockRepository = spyk(object : TestLockRepository() {
@@ -101,7 +101,7 @@ class ExpiredLockCleanupServiceTest {
         val nodeState = createNodeState()
         val raftReplicationService = mockk<RaftReplicationService>()
         every { raftReplicationService.replicate(LockOperation.RELEASE, expiredLock) } returns true
-        every { raftReplicationService.replicate(LockOperation.CREATE, any()) } returns true
+        every { raftReplicationService.replicate(LockOperation.PROMOTE, any()) } returns true
 
         val sut = ExpiredLockCleanupService(lockRepository, nodeState, raftReplicationService, 120L)
         sut.cleanupExpiredLocks()
@@ -111,7 +111,7 @@ class ExpiredLockCleanupServiceTest {
             { verify(exactly = 1) { raftReplicationService.replicate(LockOperation.RELEASE, expiredLock) } },
             { verify(exactly = 1) { lockRepository.dequeue(expiredLock.key) } },
             { verify(exactly = 1) { lockRepository.create(any()) } },
-            { verify(exactly = 1) { raftReplicationService.replicate(LockOperation.CREATE, any()) } },
+            { verify(exactly = 1) { raftReplicationService.replicate(LockOperation.PROMOTE, any()) } },
         )
     }
 
@@ -136,12 +136,12 @@ class ExpiredLockCleanupServiceTest {
             { verify(exactly = 1) { lockRepository.create(expiredLock) } },
             { verify(exactly = 0) { lockRepository.hasKeyInQueue(any()) } },
             { verify(exactly = 0) { lockRepository.dequeue(any()) } },
-            { verify(exactly = 0) { raftReplicationService.replicate(LockOperation.CREATE, any()) } },
+            { verify(exactly = 0) { raftReplicationService.replicate(LockOperation.PROMOTE, any()) } },
         )
     }
 
     @Test
-    fun `should re-enqueue promoted lock when CREATE quorum fails`() {
+    fun `should re-enqueue promoted lock when PROMOTE quorum fails`() {
         val expiredLock = createExpiredLock()
         val promotedLock = createLock()
         val lockRepository = spyk(object : TestLockRepository() {
@@ -155,14 +155,16 @@ class ExpiredLockCleanupServiceTest {
         val nodeState = createNodeState()
         val raftReplicationService = mockk<RaftReplicationService>()
         every { raftReplicationService.replicate(LockOperation.RELEASE, expiredLock) } returns true
-        every { raftReplicationService.replicate(LockOperation.CREATE, any()) } returns false
+        every { raftReplicationService.replicate(LockOperation.PROMOTE, any()) } returns false
+        every { raftReplicationService.replicate(LockOperation.ENQUEUE, any()) } returns true
 
         val sut = ExpiredLockCleanupService(lockRepository, nodeState, raftReplicationService, 120L)
         sut.cleanupExpiredLocks()
 
         assertAll(
             { verify(exactly = 1) { raftReplicationService.replicate(LockOperation.RELEASE, expiredLock) } },
-            { verify(exactly = 1) { raftReplicationService.replicate(LockOperation.CREATE, any()) } },
+            { verify(exactly = 1) { raftReplicationService.replicate(LockOperation.PROMOTE, any()) } },
+            { verify(exactly = 1) { raftReplicationService.replicate(LockOperation.ENQUEUE, any()) } },
             { verify(exactly = 1) { lockRepository.addQueue(promotedLock) } },
         )
     }

@@ -23,7 +23,7 @@ class PeerRepositoryInMemoryTest {
     @Test
     fun `should start with no peers when seeds list is empty`() {
         val repo = buildRepo()
-        assertTrue(repo.getPeerUrls().isEmpty())
+        assertTrue(repo.getRegisteredPeerUrls().isEmpty())
     }
 
     @Test
@@ -32,9 +32,9 @@ class PeerRepositoryInMemoryTest {
             selfUrl = "http://localhost:8080",
             seeds = listOf("http://localhost:8080", "http://node2:8081", "http://node3:8082"),
         )
-        assertFalse(repo.getPeerUrls().contains("http://localhost:8080"))
-        assertTrue(repo.getPeerUrls().contains("http://node2:8081"))
-        assertTrue(repo.getPeerUrls().contains("http://node3:8082"))
+        assertFalse(repo.getRegisteredPeerUrls().contains("http://localhost:8080"))
+        assertTrue(repo.getRegisteredPeerUrls().contains("http://node2:8081"))
+        assertTrue(repo.getRegisteredPeerUrls().contains("http://node3:8082"))
     }
 
     @Test
@@ -47,37 +47,37 @@ class PeerRepositoryInMemoryTest {
     fun `should merge new peers`() {
         val repo = buildRepo()
         repo.merge(mapOf("node2" to "http://node2:8081"))
-        assertTrue(repo.getPeerUrls().contains("http://node2:8081"))
+        assertTrue(repo.getRegisteredPeerUrls().contains("http://node2:8081"))
     }
 
     @Test
     fun `should not merge self`() {
         val repo = buildRepo(selfName = "node1", selfUrl = "http://localhost:8080")
         repo.merge(mapOf("node1" to "http://localhost:8080"))
-        assertFalse(repo.getPeerUrls().contains("http://localhost:8080"))
+        assertFalse(repo.getRegisteredPeerUrls().contains("http://localhost:8080"))
     }
 
     @Test
     fun `should keep peer in list when marked unreachable`() {
         val repo = buildRepo(seeds = listOf("http://node2:8081"))
         repo.merge(mapOf("node2" to "http://node2:8081"))
-        repeat(PeerRepositoryInMemory.MAX_FAILURES_BEFORE_UNREACHABLE) {
-            repo.markUnreachable("http://node2:8081")
+        repeat(PeerRepositoryInMemory.MAX_FAILURES_BEFORE_UNHEALTHY) {
+            repo.markUnhealthy("http://node2:8081")
         }
-        assertTrue(repo.getPeerUrls().contains("http://node2:8081"))
-        assertTrue(repo.getReachablePeerUrls().isEmpty())
-        assertEquals(PeerReachability.UNREACHABLE, repo.getPeerEntries().first().reachability)
+        assertTrue(repo.getRegisteredPeerUrls().contains("http://node2:8081"))
+        assertTrue(repo.getHealthyPeerUrls().isEmpty())
+        assertEquals(PeerReachability.UNHEALTHY, repo.getPeerEntries().first().reachability)
     }
 
     @Test
     fun `should mark peer reachable again after recovery`() {
         val repo = buildRepo(seeds = listOf("http://node2:8081"))
         repo.merge(mapOf("node2" to "http://node2:8081"))
-        repeat(PeerRepositoryInMemory.MAX_FAILURES_BEFORE_UNREACHABLE) {
-            repo.markUnreachable("http://node2:8081")
+        repeat(PeerRepositoryInMemory.MAX_FAILURES_BEFORE_UNHEALTHY) {
+            repo.markUnhealthy("http://node2:8081")
         }
-        repo.markReachable("http://node2:8081")
-        assertTrue(repo.getReachablePeerUrls().contains("http://node2:8081"))
+        repo.markHealthy("http://node2:8081")
+        assertTrue(repo.getHealthyPeerUrls().contains("http://node2:8081"))
         assertEquals(0, repo.getPeerEntries().first().consecutiveFailures)
     }
 
@@ -86,7 +86,7 @@ class PeerRepositoryInMemoryTest {
         val repo = buildRepo(seeds = listOf("http://node2:8081"))
         repo.merge(mapOf("node2" to "http://node2:8081"))
         repo.remove("http://node2:8081")
-        assertFalse(repo.getPeerUrls().contains("http://node2:8081"))
+        assertFalse(repo.getRegisteredPeerUrls().contains("http://node2:8081"))
     }
 
     @Test
@@ -95,9 +95,9 @@ class PeerRepositoryInMemoryTest {
             selfUrl = "http://localhost:8080",
             seeds = listOf("http://node2:8081"),
         )
-        assertTrue(repo.getPeerUrls().contains("http://node2:8081"))
+        assertTrue(repo.getRegisteredPeerUrls().contains("http://node2:8081"))
         repo.merge(mapOf("node2" to "http://node2:8081"))
-        assertTrue(repo.getPeerUrls().contains("http://node2:8081"))
-        assertEquals(1, repo.getPeerUrls().size)
+        assertTrue(repo.getRegisteredPeerUrls().contains("http://node2:8081"))
+        assertEquals(1, repo.getRegisteredPeerUrls().size)
     }
 }

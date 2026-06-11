@@ -48,7 +48,7 @@ class RaftRoutesIntegrationTest {
     fun setup() {
         (lockRepository as LockRepositoryInMemory).clear()
         nodeState.becomeFollower(0L, null, null)
-        peerRepository.getPeerUrls().forEach { peerRepository.remove(it) }
+        peerRepository.getRegisteredPeerUrls().forEach { peerRepository.remove(it) }
     }
 
     @AfterEach
@@ -174,7 +174,7 @@ class RaftRoutesIntegrationTest {
             .expectJsonPath("$.voteGranted", true)
             .execute()
 
-        assertTrue(peerRepository.getPeerUrls().contains("http://candidate-a:8080"))
+        assertTrue(peerRepository.getRegisteredPeerUrls().contains("http://candidate-a:8080"))
     }
 
     @Test
@@ -266,8 +266,8 @@ class RaftRoutesIntegrationTest {
             .expectJsonPath("$.nodes.node3", "http://node3:8082")
             .execute()
 
-        assertTrue(peerRepository.getPeerUrls().contains("http://node2:8081"))
-        assertTrue(peerRepository.getPeerUrls().contains("http://node3:8082"))
+        assertTrue(peerRepository.getRegisteredPeerUrls().contains("http://node2:8081"))
+        assertTrue(peerRepository.getRegisteredPeerUrls().contains("http://node3:8082"))
     }
 
     @Test
@@ -402,6 +402,8 @@ class RaftRoutesIntegrationTest {
             .expectStatus(200)
             .expectJsonPath("$.node", "node1")
             .expectJsonPath("$.url", "http://localhost:8080")
+            .expectJsonPath("$.healthy_cluster_size", 1)
+            .expectJsonPath("$.cluster_health.healthy_cluster_size", 1)
             .execute()
     }
 
@@ -452,7 +454,7 @@ class RaftRoutesIntegrationTest {
             .expectJsonPath("$.nodes.new-node", "http://new-node:9090")
             .execute()
 
-        assertTrue(peerRepository.getPeerUrls().contains("http://new-node:9090"))
+        assertTrue(peerRepository.getRegisteredPeerUrls().contains("http://new-node:9090"))
     }
 
     @Test
@@ -477,8 +479,8 @@ class RaftRoutesIntegrationTest {
             .expectJsonPath("$.nodes.existing-node", "http://existing:2222")
             .execute()
 
-        assertTrue(peerRepository.getPeerUrls().contains("http://existing:2222"))
-        assertFalse(peerRepository.getPeerUrls().contains("http://existing:1111"))
+        assertTrue(peerRepository.getRegisteredPeerUrls().contains("http://existing:2222"))
+        assertFalse(peerRepository.getRegisteredPeerUrls().contains("http://existing:1111"))
     }
 
     @Test

@@ -7,32 +7,60 @@ import org.junit.jupiter.api.Test
 class ChaosEngineTest {
 
     @Test
-    fun `should alternate failures for odd port outbound`() {
+    fun `should cycle offline and online for unstable node outbound`() {
         val engine = ChaosEngine(
             ChaosProperties(
                 enabled = true,
                 outbound = ChaosDirectionProperties(
                     enabled = true,
-                    mode = ChaosMode.ALTERNATING_ODD_PORTS,
+                    mode = ChaosMode.UNSTABLE_NODE,
+                    offlineMs = 100,
+                    onlineMs = 200,
                 ),
-            )
+            ),
         )
-        val oddUrl = "http://localhost:8081/raft/status"
-        val evenUrl = "http://localhost:8082/raft/status"
 
-        assertFalse(engine.shouldFailOutbound(evenUrl))
-        assertFalse(engine.shouldFailOutbound(evenUrl))
+        assertTrue(engine.isOutboundOffline())
+        Thread.sleep(110)
+        assertFalse(engine.isOutboundOffline())
+        Thread.sleep(200)
+        assertTrue(engine.isOutboundOffline())
+    }
 
-        val results = (1..4).map { engine.shouldFailOutbound(oddUrl) }
-        assertTrue(results[0])
-        assertFalse(results[1])
-        assertTrue(results[2])
-        assertFalse(results[3])
+    @Test
+    fun `should cycle offline and online for unstable node inbound`() {
+        val engine = ChaosEngine(
+            ChaosProperties(
+                enabled = true,
+                inbound = ChaosDirectionProperties(
+                    enabled = true,
+                    mode = ChaosMode.UNSTABLE_NODE,
+                    offlineMs = 50,
+                    onlineMs = 150,
+                ),
+            ),
+        )
+
+        assertTrue(engine.isInboundOffline())
+        Thread.sleep(60)
+        assertFalse(engine.isInboundOffline())
     }
 
     @Test
     fun `should not fail when chaos disabled`() {
         val engine = ChaosEngine(ChaosProperties(enabled = false))
-        assertFalse(engine.shouldFailOutbound("http://localhost:8081/raft/status"))
+        assertFalse(engine.isOutboundOffline())
+        assertFalse(engine.isInboundOffline())
+    }
+
+    @Test
+    fun `should not fail when mode is none`() {
+        val engine = ChaosEngine(
+            ChaosProperties(
+                enabled = true,
+                outbound = ChaosDirectionProperties(enabled = true, mode = ChaosMode.NONE),
+            ),
+        )
+        assertFalse(engine.isOutboundOffline())
     }
 }

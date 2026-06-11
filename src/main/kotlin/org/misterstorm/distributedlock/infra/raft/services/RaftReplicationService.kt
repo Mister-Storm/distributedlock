@@ -5,6 +5,7 @@ import org.misterstorm.distributedlock.core.adapter.PeerRepository
 import org.misterstorm.distributedlock.core.adapter.ReplicationService
 import org.misterstorm.distributedlock.core.models.lock.Lock
 import org.misterstorm.distributedlock.core.models.lock.LockOperation
+import org.misterstorm.distributedlock.core.support.ClusterHealth
 import org.misterstorm.distributedlock.infra.chaos.ClusterHttpClient
 import org.slf4j.LoggerFactory
 import org.slf4j.MDC
@@ -27,25 +28,28 @@ class RaftReplicationService(
 
     override fun replicate(operation: LockOperation, lock: Lock): Boolean {
         val idempotencyKey = UUID.randomUUID().toString()
-        val allPeers = peerRepository.getPeerUrls()
-        val reachablePeers = peerRepository.getReachablePeerUrls()
+        val registeredPeers = peerRepository.getRegisteredPeerUrls()
+        val healthyPeers = peerRepository.getHealthyPeerUrls()
 
         MDC.put("operation", operation.name)
         MDC.put("lockKey", lock.key)
         MDC.put("idempotencyKey", idempotencyKey)
 
-        if (allPeers.isEmpty()) {
+        if (registeredPeers.isEmpty()) {
             log.info("No peers to replicate to, operation accepted locally")
             MDC.remove("operation"); MDC.remove("lockKey"); MDC.remove("idempotencyKey")
             return true
         }
 
-        MDC.put("peers", reachablePeers.size.toString())
+        val quorum = ClusterHealth.healthyQuorum(peerRepository)
+        MDC.put("healthyPeers", healthyPeers.size.toString())
+        MDC.put("registeredPeers", registeredPeers.size.toString())
+        MDC.put("quorum", quorum.toString())
         log.info("Starting replication")
-        MDC.remove("peers")
+        MDC.remove("healthyPeers"); MDC.remove("registeredPeers"); MDC.remove("quorum")
 
         val replicateBody = objectMapper.writeValueAsString(ReplicateRequest(idempotencyKey, operation, lock))
-        val acks = reachablePeers.count { peer ->
+        val acks = healthyPeers.count { peer ->
             runCatching {
                 val request = HttpRequest.newBuilder()
                     .uri(URI.create("$peer/raft/replicate"))
@@ -56,12 +60,12 @@ class RaftReplicationService(
                 val response = clusterHttpClient.send(request, HttpResponse.BodyHandlers.ofString())
                 val acked = response.statusCode() == 200
                 if (acked) {
-                    peerRepository.markReachable(peer)
+                    peerRepository.markHealthy(peer)
                 } else {
                     MDC.put("peer", peer)
                     MDC.put("statusCode", response.statusCode().toString())
                     log.warn("Replication rejected by peer")
-                    peerRepository.markUnreachable(peer)
+                    peerRepository.markUnhealthy(peer)
                     MDC.remove("peer"); MDC.remove("statusCode")
                 }
                 acked
@@ -69,34 +73,32 @@ class RaftReplicationService(
                 MDC.put("peer", peer)
                 MDC.put("error", ex.message)
                 log.warn("Replication request to peer failed")
-                peerRepository.markUnreachable(peer)
+                peerRepository.markUnhealthy(peer)
                 MDC.remove("peer"); MDC.remove("error")
                 false
             }
         }
 
-        val clusterSize = allPeers.size + 1
-        val quorum = clusterSize / 2 + 1
         val totalAcks = acks + 1
 
         MDC.put("acks", totalAcks.toString())
         MDC.put("quorum", quorum.toString())
-        MDC.put("clusterSize", clusterSize.toString())
+        MDC.put("healthyClusterSize", ClusterHealth.healthyClusterSize(peerRepository).toString())
 
         if (totalAcks < quorum) {
-            log.warn("Replication failed: quorum not reached")
+            log.warn("Replication failed: quorum not reached on healthy cluster")
             MDC.remove("operation"); MDC.remove("lockKey"); MDC.remove("idempotencyKey")
-            MDC.remove("acks"); MDC.remove("quorum"); MDC.remove("clusterSize")
+            MDC.remove("acks"); MDC.remove("quorum"); MDC.remove("healthyClusterSize")
             return false
         }
 
         log.info("Replication succeeded, broadcasting commits")
-        MDC.remove("acks"); MDC.remove("quorum"); MDC.remove("clusterSize")
+        MDC.remove("acks"); MDC.remove("quorum"); MDC.remove("healthyClusterSize")
 
         commitTracker.recordCommit(idempotencyKey)
 
         val commitBody = objectMapper.writeValueAsString(CommitRequest(idempotencyKey))
-        reachablePeers.forEach { peerUrl ->
+        healthyPeers.forEach { peerUrl ->
             sendCommitWithRetry(peerUrl, commitBody)
         }
 
@@ -116,7 +118,7 @@ class RaftReplicationService(
             .whenComplete { response, error ->
                 val success = error == null && response?.statusCode() == 200
                 if (success) {
-                    peerRepository.markReachable(peerUrl)
+                    peerRepository.markHealthy(peerUrl)
                     return@whenComplete
                 }
                 if (attempt < MAX_COMMIT_RETRIES) {
@@ -126,7 +128,7 @@ class RaftReplicationService(
                     MDC.put("peer", peerUrl)
                     MDC.put("error", error?.message ?: "status=${response?.statusCode()}")
                     log.warn("Failed to send commit to peer after retries")
-                    peerRepository.markUnreachable(peerUrl)
+                    peerRepository.markUnhealthy(peerUrl)
                     MDC.remove("peer"); MDC.remove("error")
                 }
             }

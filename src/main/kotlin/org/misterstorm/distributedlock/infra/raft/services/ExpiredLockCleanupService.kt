@@ -53,13 +53,18 @@ class ExpiredLockCleanupService(
         val promoted = candidate.copy(expirationTime = LocalDateTime.now().plusSeconds(expirationTime))
         lockRepository.create(promoted)
         MDC.put("promotedOwner", promoted.lockOwner)
+        MDC.put("event", "lock_promoted")
+        MDC.put("operation", LockOperation.PROMOTE.name)
         log.info("Promoting queued lock after expiry")
-        val created = raftReplicationService.replicate(LockOperation.CREATE, promoted)
-        if (!created) {
+        val replicated = raftReplicationService.replicate(LockOperation.PROMOTE, promoted)
+        if (!replicated) {
             log.warn("Quorum not reached while promoting queued lock, re-enqueuing")
             lockRepository.release(promoted)
             lockRepository.addQueue(candidate)
+            raftReplicationService.replicate(LockOperation.ENQUEUE, candidate)
         }
         MDC.remove("promotedOwner")
+        MDC.remove("event")
+        MDC.remove("operation")
     }
 }

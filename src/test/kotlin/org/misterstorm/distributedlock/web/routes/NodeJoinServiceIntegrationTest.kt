@@ -43,7 +43,7 @@ class NodeJoinServiceIntegrationTest {
         nodeState.becomeFollower(0L, null, null)
         assertEquals(Role.FOLLOWER, nodeState.getState().role)
         assertNull(nodeState.getState().leaderName)
-        peerRepository.getPeerUrls().forEach { peerRepository.remove(it) }
+        peerRepository.getRegisteredPeerUrls().forEach { peerRepository.remove(it) }
     }
 
     private fun mockLeaderUrl(port: Int): String = "http://127.0.0.1:$port"
@@ -52,7 +52,7 @@ class NodeJoinServiceIntegrationTest {
     fun tearDown() {
         mockServer?.stop()
         mockServer = null
-        peerRepository.getPeerUrls().forEach { peerRepository.remove(it) }
+        peerRepository.getRegisteredPeerUrls().forEach { peerRepository.remove(it) }
     }
 
     @Test

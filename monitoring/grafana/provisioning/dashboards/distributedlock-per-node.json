@@ -1,0 +1,338 @@
+{
+  "title": "DistributedLock - Per Node",
+  "uid": "distributedlock-per-node",
+  "schemaVersion": 39,
+  "version": 2,
+  "refresh": "10s",
+  "time": {
+    "from": "now-30m",
+    "to": "now"
+  },
+  "timezone": "browser",
+  "tags": [
+    "distributedlock",
+    "raft",
+    "per-node",
+    "loki"
+  ],
+  "templating": {
+    "list": [
+      {
+        "name": "service",
+        "label": "Node",
+        "type": "query",
+        "datasource": {
+          "type": "loki",
+          "uid": "loki-distributedlock"
+        },
+        "query": "label_values(service)",
+        "multi": true,
+        "includeAll": true,
+        "allValue": ".+",
+        "current": {
+          "selected": true,
+          "text": "All",
+          "value": "$__all"
+        },
+        "refresh": 2
+      },
+      {
+        "name": "raft_node",
+        "label": "Raft node name",
+        "type": "query",
+        "datasource": {
+          "type": "loki",
+          "uid": "loki-distributedlock"
+        },
+        "query": "label_values({service=~\"$service\"}, raft_node)",
+        "multi": false,
+        "includeAll": true,
+        "allValue": ".+",
+        "current": {
+          "selected": true,
+          "text": "All",
+          "value": "$__all"
+        },
+        "refresh": 2
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Node Activity",
+      "type": "logs",
+      "gridPos": { "x": 0, "y": 0, "w": 24, "h": 7 },
+      "datasource": { "type": "loki", "uid": "loki-distributedlock" },
+      "options": {
+        "dedupStrategy": "none",
+        "enableLogDetails": true,
+        "showLabels": true,
+        "showTime": true,
+        "sortOrder": "Descending",
+        "wrapLogMessage": true
+      },
+      "targets": [
+        {
+          "expr": "{service=~\"$service\", raft_node=~\"$raft_node\"}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "title": "Lock Activity Rate",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 7, "w": 12, "h": 6 },
+      "datasource": { "type": "loki", "uid": "loki-distributedlock" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "lineWidth": 2 }
+        }
+      },
+      "options": {
+        "legend": { "displayMode": "table", "placement": "bottom" }
+      },
+      "targets": [
+        {
+          "expr": "sum by (operation) (rate({service=~\"$service\", raft_node=~\"$raft_node\", operation=~\"POST /lock|DELETE /lock|PUT /lock/renew|CREATE|RELEASE|RENEW|ENQUEUE|PROMOTE\"}[1m]))",
+          "refId": "A",
+          "legendFormat": "{{operation}}"
+        },
+        {
+          "expr": "sum(rate({service=~\"$service\", raft_node=~\"$raft_node\", event=\"lock_promoted\"}[1m]))",
+          "refId": "B",
+          "legendFormat": "lock_promoted"
+        }
+      ]
+    },
+    {
+      "id": 12,
+      "title": "Chaos Simulation Rate",
+      "type": "timeseries",
+      "gridPos": { "x": 12, "y": 7, "w": 12, "h": 6 },
+      "datasource": { "type": "loki", "uid": "loki-distributedlock" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "lineWidth": 2 }
+        }
+      },
+      "options": {
+        "legend": { "displayMode": "table", "placement": "bottom" }
+      },
+      "targets": [
+        {
+          "expr": "sum by (chaos_action) (rate({service=~\"$service\", event=\"chaos_simulation\"}[5m]))",
+          "refId": "A",
+          "legendFormat": "{{chaos_action}}"
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "title": "Lock Operations (HTTP + Replication)",
+      "type": "logs",
+      "gridPos": { "x": 0, "y": 13, "w": 12, "h": 8 },
+      "datasource": { "type": "loki", "uid": "loki-distributedlock" },
+      "options": {
+        "dedupStrategy": "none",
+        "enableLogDetails": true,
+        "showLabels": true,
+        "showTime": true,
+        "sortOrder": "Descending",
+        "wrapLogMessage": true
+      },
+      "targets": [
+        {
+          "expr": "{service=~\"$service\", raft_node=~\"$raft_node\", operation=~\"POST /lock|DELETE /lock|PUT /lock/renew|CREATE|RELEASE|RENEW|ENQUEUE|PROMOTE\"}",
+          "refId": "A"
+        },
+        {
+          "expr": "{service=~\"$service\", raft_node=~\"$raft_node\", event=\"lock_promoted\"}",
+          "refId": "B"
+        },
+        {
+          "expr": "{service=~\"$service\", raft_node=~\"$raft_node\"} |~ \"(?i)lock request|lock created|lock release|promot|enqueue|renew|quorum not reached\"",
+          "refId": "C"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "title": "Chaos Simulation (/raft only)",
+      "type": "logs",
+      "gridPos": { "x": 12, "y": 13, "w": 12, "h": 8 },
+      "datasource": { "type": "loki", "uid": "loki-distributedlock" },
+      "options": {
+        "dedupStrategy": "none",
+        "enableLogDetails": true,
+        "showLabels": true,
+        "showTime": true,
+        "sortOrder": "Descending",
+        "wrapLogMessage": true
+      },
+      "targets": [
+        {
+          "expr": "{service=~\"$service\", event=\"chaos_simulation\"}",
+          "refId": "A"
+        },
+        {
+          "expr": "{service=~\"$service\", raft_node=~\"$raft_node\"} |~ \"(?i)chaos simulation|temporarily offline\"",
+          "refId": "B"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "Errors & Warnings",
+      "type": "logs",
+      "gridPos": { "x": 0, "y": 21, "w": 12, "h": 7 },
+      "datasource": { "type": "loki", "uid": "loki-distributedlock" },
+      "options": {
+        "dedupStrategy": "none",
+        "enableLogDetails": true,
+        "showLabels": true,
+        "showTime": true,
+        "sortOrder": "Descending",
+        "wrapLogMessage": true
+      },
+      "targets": [
+        {
+          "expr": "{service=~\"$service\", raft_node=~\"$raft_node\", level=~\"WARN|ERROR\"}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "Error Rate",
+      "type": "timeseries",
+      "gridPos": { "x": 12, "y": 21, "w": 12, "h": 7 },
+      "datasource": { "type": "loki", "uid": "loki-distributedlock" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "fixed", "fixedColor": "red" },
+          "custom": { "lineWidth": 2 }
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum(rate({service=~\"$service\", raft_node=~\"$raft_node\", level=\"ERROR\"}[1m]))",
+          "refId": "A",
+          "legendFormat": "errors/s"
+        },
+        {
+          "expr": "sum(rate({service=~\"$service\", raft_node=~\"$raft_node\", level=\"WARN\"}[1m]))",
+          "refId": "B",
+          "legendFormat": "warns/s"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "Cluster Health Events",
+      "type": "logs",
+      "gridPos": { "x": 0, "y": 28, "w": 12, "h": 8 },
+      "datasource": { "type": "loki", "uid": "loki-distributedlock" },
+      "options": {
+        "dedupStrategy": "none",
+        "enableLogDetails": true,
+        "showLabels": true,
+        "showTime": true,
+        "sortOrder": "Descending",
+        "wrapLogMessage": true
+      },
+      "targets": [
+        {
+          "expr": "{service=~\"$service\", raft_node=~\"$raft_node\", event=~\"cluster_health_summary|peer_health_transition|peer_health_probe|peer_recovery_probe\"}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "Peer Health Transitions",
+      "type": "timeseries",
+      "gridPos": { "x": 12, "y": 28, "w": 12, "h": 8 },
+      "datasource": { "type": "loki", "uid": "loki-distributedlock" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "lineWidth": 2, "stacking": { "mode": "normal" } }
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum by (peer_status) (rate({service=~\"$service\", event=\"peer_health_transition\"}[5m]))",
+          "refId": "A",
+          "legendFormat": "{{peer_status}}"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "title": "Elections & Leadership",
+      "type": "logs",
+      "gridPos": { "x": 0, "y": 36, "w": 12, "h": 7 },
+      "datasource": { "type": "loki", "uid": "loki-distributedlock" },
+      "options": {
+        "dedupStrategy": "none",
+        "enableLogDetails": true,
+        "showLabels": true,
+        "showTime": true,
+        "sortOrder": "Descending",
+        "wrapLogMessage": true
+      },
+      "targets": [
+        {
+          "expr": "{service=~\"$service\", raft_node=~\"$raft_node\"} |~ \"(?i)election|vote|leader|candidate|follower|quorum|healthy cluster\"",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "title": "Node Join & Gossip",
+      "type": "logs",
+      "gridPos": { "x": 12, "y": 36, "w": 12, "h": 7 },
+      "datasource": { "type": "loki", "uid": "loki-distributedlock" },
+      "options": {
+        "dedupStrategy": "none",
+        "enableLogDetails": true,
+        "showLabels": true,
+        "showTime": true,
+        "sortOrder": "Descending",
+        "wrapLogMessage": true
+      },
+      "targets": [
+        {
+          "expr": "{service=~\"$service\", raft_node=~\"$raft_node\"} |~ \"(?i)join|gossip|discover|merge|seed\"",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "title": "Replication & Quorum",
+      "type": "logs",
+      "gridPos": { "x": 0, "y": 43, "w": 24, "h": 7 },
+      "datasource": { "type": "loki", "uid": "loki-distributedlock" },
+      "options": {
+        "dedupStrategy": "none",
+        "enableLogDetails": true,
+        "showLabels": true,
+        "showTime": true,
+        "sortOrder": "Descending",
+        "wrapLogMessage": true
+      },
+      "targets": [
+        {
+          "expr": "{service=~\"$service\", raft_node=~\"$raft_node\"} |~ \"(?i)replica|quorum|commit|healthy cluster\"",
+          "refId": "A"
+        }
+      ]
+    }
+  ]
+}

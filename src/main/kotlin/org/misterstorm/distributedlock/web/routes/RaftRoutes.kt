@@ -106,8 +106,27 @@ class RaftRoutes(
                 "leaderUrl" to status.leaderUrl,
                 "peers" to status.peers,
                 "knownNodes" to status.knownNodes,
+                "healthy_peers" to status.healthyPeers,
+                "unhealthy_peers" to status.unhealthyPeers,
+                "healthy_cluster_size" to status.healthyClusterSize,
+                "peer_details" to status.peerDetails.map { peer ->
+                    mapOf(
+                        "name" to peer.name,
+                        "url" to peer.url,
+                        "status" to peer.reachability.name,
+                        "consecutive_failures" to peer.consecutiveFailures,
+                        "last_seen_at" to peer.lastSeenAt?.toString(),
+                        "last_health_check_at" to peer.lastHealthCheckAt?.toString(),
+                    )
+                },
+                "cluster_health" to mapOf(
+                    "healthy_cluster_size" to status.healthyClusterSize,
+                    "healthy_peers" to status.healthyPeers,
+                    "unhealthy_peers" to status.unhealthyPeers,
+                ),
                 "locks" to status.locks,
                 "locks_in_queue" to status.locksInQueue,
+                "chaos" to status.chaos,
             )
         )
     }

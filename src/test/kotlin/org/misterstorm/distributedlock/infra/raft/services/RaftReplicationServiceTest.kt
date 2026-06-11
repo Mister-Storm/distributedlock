@@ -37,8 +37,8 @@ class RaftReplicationServiceTest {
         clusterHttpClient: ClusterHttpClient = mockk(),
     ): Triple<RaftReplicationService, CommitTracker, ClusterHttpClient> {
         val peerRepository = mockk<PeerRepository>(relaxed = true)
-        every { peerRepository.getPeerUrls() } returns peers
-        every { peerRepository.getReachablePeerUrls() } returns peers
+        every { peerRepository.getRegisteredPeerUrls() } returns peers
+        every { peerRepository.getHealthyPeerUrls() } returns peers
         return Triple(
             RaftReplicationService(peerRepository, commitTracker, clusterHttpClient, objectMapper),
             commitTracker,

@@ -13,10 +13,12 @@ data class ChaosDirectionProperties(
     val enabled: Boolean = true,
     val delayMs: Long = 0,
     val mode: ChaosMode = ChaosMode.NONE,
+    val offlineMs: Long = 5000,
+    val onlineMs: Long = 15000,
 )
 
 enum class ChaosMode {
     NONE,
-    ALTERNATING_ODD_PORTS,
-    ALWAYS_FAIL_ODD_PORTS,
+    UNSTABLE_NODE,
+    SLOW,
 }

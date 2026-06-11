@@ -11,16 +11,22 @@ distributedlock:
     seeds: ${RAFT_SEEDS:http://localhost:8081,http://localhost:8082}
   expirationTime: 120
   lockCleanupInterval: 3000
+  health:
+    checkInterval: ${HEALTH_CHECK_INTERVAL:4000}
   chaos:
     enabled: ${CHAOS_ENABLED:false}
     inbound:
       enabled: true
       delayMs: ${CHAOS_INBOUND_DELAY_MS:0}
       mode: ${CHAOS_INBOUND_MODE:NONE}
+      offlineMs: ${CHAOS_INBOUND_OFFLINE_MS:5000}
+      onlineMs: ${CHAOS_INBOUND_ONLINE_MS:15000}
     outbound:
       enabled: true
       delayMs: ${CHAOS_OUTBOUND_DELAY_MS:0}
       mode: ${CHAOS_OUTBOUND_MODE:NONE}
+      offlineMs: ${CHAOS_OUTBOUND_OFFLINE_MS:5000}
+      onlineMs: ${CHAOS_OUTBOUND_ONLINE_MS:15000}
 server:
   port: ${SERVER_PORT:8080}
 management:

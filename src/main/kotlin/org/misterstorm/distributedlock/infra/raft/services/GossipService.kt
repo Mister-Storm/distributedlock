@@ -30,7 +30,7 @@ class GossipService(
 
         val requestBody = objectMapper.writeValueAsString(GossipMessage(localNodes))
 
-        peerRepository.getPeerUrls().forEach { url ->
+        peerRepository.getRegisteredPeerUrls().forEach { url ->
             runCatching {
                 val request = HttpRequest.newBuilder()
                     .uri(URI.create("$url/raft/gossip"))
@@ -42,14 +42,14 @@ class GossipService(
                     if (response.statusCode() == 200) {
                         val gossipResponse = objectMapper.readValue(response.body(), GossipMessage::class.java)
                         peerRepository.merge(gossipResponse.nodes)
-                        peerRepository.markReachable(url)
+                        peerRepository.markHealthy(url)
                         MDC.put("receivedNodes", gossipResponse.nodes.size.toString())
                         log.info("Gossip exchange successful")
                         MDC.remove("receivedNodes")
                     } else {
                         MDC.put("statusCode", response.statusCode().toString())
                         log.warn("Gossip rejected by peer")
-                        peerRepository.markUnreachable(url)
+                        peerRepository.markUnhealthy(url)
                         MDC.remove("statusCode")
                     }
                     MDC.remove("peer")
@@ -58,7 +58,7 @@ class GossipService(
                 MDC.put("peer", url)
                 MDC.put("error", ex.message)
                 log.warn("Gossip failed for peer")
-                peerRepository.markUnreachable(url)
+                peerRepository.markUnhealthy(url)
                 MDC.remove("peer"); MDC.remove("error")
             }
         }

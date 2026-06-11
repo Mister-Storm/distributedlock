@@ -1,6 +1,7 @@
 package org.misterstorm.distributedlock.infra.raft.services
 
 import kotlinx.coroutines.runBlocking
+import org.misterstorm.distributedlock.core.models.Role
 import org.misterstorm.distributedlock.core.usecases.raft.StartElectionUseCase
 import org.misterstorm.distributedlock.infra.raft.repository.NodeStateRepositoryInMemory
 import org.slf4j.LoggerFactory
@@ -18,8 +19,16 @@ class ElectionService(
 
     @Scheduled(fixedRateString = "\${distributedlock.node.electionTimeout:6000}")
     fun checkElectionTimeout() {
-        if (nodeStateRepository.isLeader() || !nodeStateRepository.isHeartbeatExpired(electionTimeout)) return
-        startElection()
+        val state = nodeStateRepository.getState()
+        if (state.role == Role.LEADER) return
+
+        val heartbeatExpired = nodeStateRepository.isHeartbeatExpired(electionTimeout)
+        val stuckAsCandidate = state.role == Role.CANDIDATE && heartbeatExpired
+
+        if (heartbeatExpired || stuckAsCandidate) {
+            log.info("Triggering election: heartbeatExpired={}, role={}", heartbeatExpired, state.role)
+            startElection()
+        }
     }
 
     fun startElection() = runBlocking { startElectionUseCase.execute(Unit) }
