@@ -23,7 +23,7 @@ class LockRoutes(
     private val lockReleaseUseCase: LockReleaseUseCase,
     private val lockRenewUseCase: LockRenewUseCase,
     private val getResourceLockStatusUseCase: GetResourceLockStatusUseCase,
-    @Value("\${distributedlock.node.public-url}") private val publicLockBaseUrl: String,
+    @Value("\${distributedlock.node.public-url:http://localhost:8080}") private val publicLockBaseUrl: String,
 ) : LockRoutesSpec {
 
     private val log = LoggerFactory.getLogger(javaClass)
