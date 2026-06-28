@@ -1,34 +1,49 @@
 # Docker's internal DNS resolver — required for dynamic $variable upstreams in proxy_pass
 resolver 127.0.0.11 valid=5s;
 
+upstream lock_nodes {
+    server node1:8080;
+    server node2:8080;
+    server node3:8080;
+    server node4:8080;
+    server node5:8080;
+    server node6:8080;
+}
+
 server {
     listen ${PROXY_PORT};
 
-    # Dynamic routing: the first path segment is the node name.
-    # /node1/lock           → node1:8080/lock
-    # /node2/raft/heartbeat → node2:8080/raft/heartbeat
-    #
-    # Adding a new node requires ONLY adding its service to docker-compose.yml.
-    # No changes to this file are ever needed.
-    location ~ ^/([^/]+)(/.+)$ {
+    access_log /dev/stdout lock_trace;
+
+    # Raft endpoints — accessible only from Docker/internal networks
+    location ~ ^/([^/]+)/raft(/.*)$ {
+        allow 10.0.0.0/8;
+        allow 172.16.0.0/12;
+        allow 192.168.0.0/16;
+        deny all;
+
         set $node_upstream $1;
-        set $path_rest     $2;
+        set $path_rest     /raft$2;
 
         proxy_pass http://$node_upstream:8080$path_rest;
 
-        # Rewrite Location headers coming from app containers.
-        # App nodes advertise NODE_URL = http://distributedlock-proxy:PORT/nodeX,
-        # so redirect responses look like:
-        #   Location: http://distributedlock-proxy:PORT/nodeX/lock
-        # We replace the host with $http_host (whatever host the caller used):
-        #  - External clients (Host: localhost:8080) get → http://localhost:8080/nodeX/lock  ✓
-        #  - Internal nodes  (Host: distributedlock-proxy:PORT) stay unchanged               ✓
         proxy_redirect ~^http://distributedlock-proxy:${PROXY_PORT}(/.*)$ http://$http_host$1;
 
         proxy_set_header Host             $host;
         proxy_set_header X-Real-IP        $remote_addr;
         proxy_set_header X-Forwarded-For  $proxy_add_x_forwarded_for;
+        proxy_set_header X-Request-Id     $request_id;
+    }
+
+    # Public lock API — round-robin across all nodes
+    location /v1/lock {
+        proxy_pass http://lock_nodes/lock;
+
+        proxy_redirect ~^http://distributedlock-proxy:${PROXY_PORT}/v1(.*)$ http://$http_host/v1$1;
+
+        proxy_set_header Host             $host;
+        proxy_set_header X-Real-IP        $remote_addr;
+        proxy_set_header X-Forwarded-For  $proxy_add_x_forwarded_for;
+        proxy_set_header X-Request-Id     $request_id;
     }
 }
-
-

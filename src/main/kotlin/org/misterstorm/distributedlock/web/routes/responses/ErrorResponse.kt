@@ -16,6 +16,11 @@ data class ErrorResponse(
                 httpStatus = HttpStatus.ACCEPTED,
                 timestamp = System.currentTimeMillis()
             )
+            is BusinessError.AlreadyInQueue -> ErrorResponse(
+                message = "Client is already waiting in queue for key ${error.key}",
+                httpStatus = HttpStatus.ACCEPTED,
+                timestamp = System.currentTimeMillis()
+            )
             is BusinessError.UnexpectedException -> ErrorResponse(
                 message = "An unexpected error occurred",
                 httpStatus = HttpStatus.INTERNAL_SERVER_ERROR,

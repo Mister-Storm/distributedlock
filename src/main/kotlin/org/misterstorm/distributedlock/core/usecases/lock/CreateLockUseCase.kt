@@ -34,8 +34,29 @@ class CreateLockUseCase(
         MDC.put("clientId", input.clientId)
         MDC.put("lockKey", input.key)
 
+        val existing = lockRepository.getByKey(input.key)
+        existing?.let { lock ->
+            if (!lock.isExpired()) {
+                if (lock.lockOwner == input.clientId) {
+                    log.info("Lock already held by requester — idempotent success")
+                    clearMdc()
+                    return Either.Right(lock)
+                }
+                if (lockRepository.hasClientInQueue(input.key, input.clientId)) {
+                    log.info("Client already in queue for key — idempotent response")
+                    clearMdc()
+                    return Either.Left(BusinessError.AlreadyInQueue(input.key))
+                }
+            }
+        }
+
         val result: Either<BusinessError, Lock> = either {
-            verifyExistentLock(input)
+            if (existing != null && !existing.isExpired()) {
+                MDC.put("existingOwner", existing.lockOwner)
+                log.warn("Lock creation denied: lock already exists and is not expired")
+                MDC.remove("existingOwner")
+                raise(BusinessError.LockAlreadyExists(input.key))
+            }
             val lock = getLock(input)
             verifyQuorum(
                 { replicationService.replicate(LockOperation.CREATE, lock) },
@@ -66,9 +87,13 @@ class CreateLockUseCase(
             }
         }
 
+        clearMdc()
+        return result
+    }
+
+    private fun clearMdc() {
         MDC.remove("clientId")
         MDC.remove("lockKey")
-        return result
     }
 
     private fun Raise<BusinessError>.getLock(input: LockCandidate): Lock {
@@ -110,17 +135,6 @@ class CreateLockUseCase(
                 raise(BusinessError.UnexpectedException())
             }
         )
-    }
-
-    private fun Raise<BusinessError>.verifyExistentLock(input: LockCandidate) {
-        lockRepository.getByKey(input.key)?.let { lock ->
-            if (!lock.isExpired()) {
-                MDC.put("existingOwner", lock.lockOwner)
-                log.warn("Lock creation denied: lock already exists and is not expired")
-                MDC.remove("existingOwner")
-                raise(BusinessError.LockAlreadyExists(input.key))
-            }
-        }
     }
 
 }

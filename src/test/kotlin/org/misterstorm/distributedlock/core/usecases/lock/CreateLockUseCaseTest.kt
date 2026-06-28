@@ -67,6 +67,7 @@ class CreateLockUseCaseTest {
         val lockRepositoryStub = spyk(object : TestLockRepository() {
             override fun getByKey(key: String): Lock = createLock()
             override fun hasKeyInQueue(key: String): Boolean = false
+            override fun hasClientInQueue(key: String, clientId: String): Boolean = false
         })
         val failLockPublisher = spyk(object : Publisher<Lock> {
             override fun publish(value: Lock) = Unit
@@ -77,7 +78,7 @@ class CreateLockUseCaseTest {
             lockRepositoryStub, failLockPublisher,
             expirationTime, createNodeState(), raftReplicationServiceMock
         )
-        val lockCandidate = createLockCandidate()
+        val lockCandidate = createLockCandidate(clientId = "another-client")
         sut.execute(lockCandidate).fold(
             { error ->
                 assertAll(
@@ -300,6 +301,7 @@ class CreateLockUseCaseTest {
         val lockRepositoryStub = spyk(object : TestLockRepository() {
             override fun getByKey(key: String): Lock = createLock()
             override fun hasKeyInQueue(key: String): Boolean = false
+            override fun hasClientInQueue(key: String, clientId: String): Boolean = false
         })
         val failLockPublisher = spyk(object : Publisher<Lock> {
             override fun publish(value: Lock) = Unit
@@ -319,6 +321,61 @@ class CreateLockUseCaseTest {
             { assertEquals(lockCandidate.key, enqueuedLocks.first().key) },
             { assertEquals(lockCandidate.clientId, enqueuedLocks.first().lockOwner) },
             { assertTrue(enqueuedLocks.first().expirationTime > LocalDateTime.now(), "Queue entry expiration should be in the future") },
+        )
+    }
+
+    @Test
+    fun `should return existing lock when same client already owns it`() = runTest {
+        val existingLock = createLock(lockOwner = "owner-client")
+        val lockRepositoryStub = spyk(object : TestLockRepository() {
+            override fun getByKey(key: String): Lock = existingLock
+            override fun hasClientInQueue(key: String, clientId: String): Boolean = false
+        })
+        val failLockPublisher = spyk(object : Publisher<Lock> {
+            override fun publish(value: Lock) = Unit
+        })
+        val raftReplicationServiceMock = mockk<RaftReplicationService>()
+        val sut = CreateLockUseCase(
+            lockRepositoryStub, failLockPublisher,
+            expirationTime, createNodeState(), raftReplicationServiceMock
+        )
+        val lockCandidate = createLockCandidate(clientId = "owner-client")
+
+        sut.execute(lockCandidate).fold(
+            { fail("Expected idempotent success, got error: $it") },
+            { lock ->
+                assertEquals(existingLock.key, lock.key)
+                assertEquals(existingLock.lockOwner, lock.lockOwner)
+                verify(exactly = 0) { failLockPublisher.publish(any()) }
+                verify(exactly = 0) { raftReplicationServiceMock.replicate(any(), any()) }
+            },
+        )
+    }
+
+    @Test
+    fun `should return AlreadyInQueue when same client requests again while waiting`() = runTest {
+        val lockRepositoryStub = spyk(object : TestLockRepository() {
+            override fun getByKey(key: String): Lock = createLock(lockOwner = "other-owner")
+            override fun hasClientInQueue(key: String, clientId: String): Boolean =
+                key == createLock().key && clientId == "waiting-client"
+        })
+        val failLockPublisher = spyk(object : Publisher<Lock> {
+            override fun publish(value: Lock) = Unit
+        })
+        val raftReplicationServiceMock = mockk<RaftReplicationService>()
+        val sut = CreateLockUseCase(
+            lockRepositoryStub, failLockPublisher,
+            expirationTime, createNodeState(), raftReplicationServiceMock
+        )
+        val lockCandidate = createLockCandidate(clientId = "waiting-client")
+
+        sut.execute(lockCandidate).fold(
+            { error ->
+                assertTrue(error is BusinessError.AlreadyInQueue)
+                verify(exactly = 0) { failLockPublisher.publish(any()) }
+                verify(exactly = 0) { raftReplicationServiceMock.replicate(any(), any()) }
+            },
+            { fail("Expected AlreadyInQueue error") },
         )
     }
 

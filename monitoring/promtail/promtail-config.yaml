@@ -39,7 +39,7 @@ scrape_configs:
 
       # Keep only containers from this compose project
       - source_labels: [__meta_docker_container_label_com_docker_compose_project]
-        regex: distributedlock
+        regex: (distributedlock|final_project)
         action: keep
 
     # ── Pipeline: parse the JSON emitted by LogstashEncoder ─────────────────

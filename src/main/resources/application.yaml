@@ -5,6 +5,7 @@ distributedlock:
   node:
     name: ${NODE_NAME:node1}
     url: ${NODE_URL:http://localhost:8080}
+    public-url: ${PUBLIC_NODE_URL:${NODE_URL:http://localhost:8080}}
     electionTimeout: 6000
     gossipInterval: ${GOSSIP_INTERVAL:3000}
   raft:

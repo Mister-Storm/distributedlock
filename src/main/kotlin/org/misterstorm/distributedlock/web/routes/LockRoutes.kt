@@ -10,6 +10,7 @@ import org.misterstorm.distributedlock.web.routes.responses.ErrorResponse
 import org.misterstorm.distributedlock.web.routes.spec.LockRoutesSpec
 import org.slf4j.LoggerFactory
 import org.slf4j.MDC
+import org.springframework.beans.factory.annotation.Value
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.RequestMapping
@@ -22,6 +23,7 @@ class LockRoutes(
     private val lockReleaseUseCase: LockReleaseUseCase,
     private val lockRenewUseCase: LockRenewUseCase,
     private val getResourceLockStatusUseCase: GetResourceLockStatusUseCase,
+    @Value("\${distributedlock.node.public-url}") private val publicLockBaseUrl: String,
 ) : LockRoutesSpec {
 
     private val log = LoggerFactory.getLogger(javaClass)
@@ -64,13 +66,14 @@ class LockRoutes(
     }
 
     private fun handleError(error: BusinessError, path: String): ResponseEntity<*> {
-        if (error is BusinessError.NotLeader && error.leaderUrl != null) {
-            MDC.put("redirectTo", "${error.leaderUrl}$path")
+        if (error is BusinessError.NotLeader) {
+            val redirectBase = (error.leaderUrl ?: publicLockBaseUrl).trimEnd('/')
+            MDC.put("redirectTo", "$redirectBase$path")
             log.info("Redirecting request to leader")
             MDC.remove("redirectTo")
             return ResponseEntity
                 .status(HttpStatus.TEMPORARY_REDIRECT)
-                .header("Location", "${error.leaderUrl}$path")
+                .header("Location", "$redirectBase$path")
                 .build<Unit>()
         }
         val result = ErrorResponse.from(error)
